@@ -1,0 +1,67 @@
+{% schema %}
+{
+  "name": "Product Custom Info",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Additional Information"
+    },
+    {
+      "type": "richtext",
+      "id": "description",
+      "label": "Description",
+      "default": "<p>Add your custom content here</p>"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "padding",
+      "label": "Padding",
+      "min": 0,
+      "max": 50,
+      "step": 5,
+      "default": 20,
+      "unit": "px"
+    }
+  ]
+}
+{% endschema %}
+
+<div class="custom-product-block" style="background-color: {{ block.settings.background_color }}; padding: {{ block.settings.padding }}px;">
+  {% if block.settings.title != blank %}
+    <h3 class="custom-block-title">{{ block.settings.title }}</h3>
+  {% endif %}
+
+  {% if block.settings.description != blank %}
+    <div class="custom-block-content">
+
+      {{ block.settings.description }}
+    </div>
+  {% endif %}
+</div>
+
+<style>
+  .custom-product-block {
+    margin: 20px 0;
+    border-radius: 8px;
+  }
+
+  .custom-block-title {
+    font-size: 24px;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .custom-block-content {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+</style>

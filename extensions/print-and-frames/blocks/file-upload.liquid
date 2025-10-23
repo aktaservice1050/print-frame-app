@@ -1,0 +1,290 @@
+{% comment %}
+  File: extensions/your-extension/blocks/file-upload.liquid
+{% endcomment %}
+
+<div class="custom-file-upload" id="fileUploadBlock">
+  <div class="upload-container">
+    <h3>{{ block.settings.heading | default: "ফাইল আপলোড করুন" }}</h3>
+
+    <div class="file-input-wrapper">
+      <label for="fileInput" class="file-label">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span class="label-text">ফাইল সিলেক্ট করুন</span>
+      </label>
+      <input
+        type="file"
+        id="fileInput"
+        accept="image/*,.pdf"
+        style="display: none;"
+      >
+    </div>
+
+    <div id="filePreview" class="file-preview" style="display: none;">
+      <img id="previewImage" src="" alt="Preview" style="max-width: 200px; max-height: 200px;">
+      <p id="fileName" class="file-name"></p>
+      <p id="fileSize" class="file-size"></p>
+    </div>
+
+    <button
+      id="uploadBtn"
+      class="upload-button"
+      disabled
+    >
+      আপলোড করুন
+    </button>
+
+    <div id="uploadStatus" class="upload-status"></div>
+
+    <div id="uploadedFileUrl" class="uploaded-file" style="display: none;">
+      <p>আপলোড সফল হয়েছে!</p>
+      <a id="fileLink" href="" target="_blank">ফাইল দেখুন</a>
+    </div>
+  </div>
+</div>
+
+<style>
+  .custom-file-upload {
+    padding: 20px;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .upload-container {
+    border: 2px dashed #ddd;
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+    background: #fafafa;
+  }
+
+  .file-input-wrapper {
+    margin: 20px 0;
+  }
+
+  .file-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+
+  .file-label:hover {
+    border-color: #333;
+    background: #f5f5f5;
+  }
+
+  .upload-button {
+    padding: 12px 30px;
+    background: #333;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 15px;
+    transition: all 0.3s;
+  }
+
+  .upload-button:hover:not(:disabled) {
+    background: #555;
+  }
+
+  .upload-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .upload-button.loading {
+    position: relative;
+    color: transparent;
+  }
+
+  .upload-button.loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spinner 0.6s linear infinite;
+  }
+
+  @keyframes spinner {
+    to { transform: rotate(360deg); }
+  }
+
+  .file-preview {
+    margin: 20px 0;
+    padding: 15px;
+    background: white;
+    border-radius: 6px;
+  }
+
+  .file-name {
+    font-weight: bold;
+    margin: 10px 0 5px;
+  }
+
+  .file-size {
+    color: #666;
+    font-size: 14px;
+  }
+
+  .upload-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .upload-status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  }
+
+  .upload-status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+  }
+
+  .uploaded-file {
+    margin-top: 20px;
+    padding: 15px;
+    background: #d4edda;
+    border-radius: 6px;
+  }
+
+  .uploaded-file a {
+    color: #155724;
+    text-decoration: underline;
+  }
+</style>
+
+<script>
+  (function() {
+    const fileInput = document.getElementById('fileInput');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const filePreview = document.getElementById('filePreview');
+    const previewImage = document.getElementById('previewImage');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const uploadedFileUrl = document.getElementById('uploadedFileUrl');
+    const fileLink = document.getElementById('fileLink');
+
+    let selectedFile = null;
+
+    // ফাইল সিলেক্ট হলে
+    fileInput.addEventListener('change', function(e) {
+      selectedFile = e.target.files[0];
+
+      if (selectedFile) {
+        // Preview দেখান
+        fileName.textContent = selectedFile.name;
+        fileSize.textContent = `Size: ${(selectedFile.size / 1024).toFixed(2)} KB`;
+
+        // যদি image হয় তাহলে preview দেখান
+        if (selectedFile.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            previewImage.src = e.target.result;
+            previewImage.style.display = 'block';
+          };
+          reader.readAsDataURL(selectedFile);
+        } else {
+          previewImage.style.display = 'none';
+        }
+
+        filePreview.style.display = 'block';
+        uploadBtn.disabled = false;
+        uploadStatus.textContent = '';
+        uploadStatus.className = 'upload-status';
+        uploadedFileUrl.style.display = 'none';
+      }
+    });
+
+    // আপলোড বাটনে ক্লিক করলে
+    uploadBtn.addEventListener('click', async function() {
+      if (!selectedFile) return;
+
+      uploadBtn.disabled = true;
+      uploadBtn.classList.add('loading');
+      uploadStatus.textContent = 'আপলোড হচ্ছে...';
+      uploadStatus.className = 'upload-status';
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('shop', '{{ shop.domain }}');
+      {% if customer %}
+      formData.append('customerId', '{{ customer.id }}');
+      {% endif %}
+
+      try {
+        // App Proxy URL - upload-url যোগ করা হয়েছে
+        const response = await fetch('/apps/upload-url/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          uploadStatus.textContent = result.message;
+          uploadStatus.className = 'upload-status success';
+
+          // আপলোড করা ফাইলের লিংক দেখান
+          fileLink.href = result.fileUrl;
+          uploadedFileUrl.style.display = 'block';
+
+          // Reset form
+          setTimeout(() => {
+            fileInput.value = '';
+            selectedFile = null;
+            filePreview.style.display = 'none';
+          }, 2000);
+        } else {
+          uploadStatus.textContent = result.error || 'আপলোড ব্যর্থ হয়েছে';
+          uploadStatus.className = 'upload-status error';
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        uploadStatus.textContent = 'আপলোড করতে সমস্যা হয়েছে';
+        uploadStatus.className = 'upload-status error';
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.classList.remove('loading');
+      }
+    });
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "File Upload",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "ফাইল আপলোড করুন"
+    }
+  ]
+}
+{% endschema %}

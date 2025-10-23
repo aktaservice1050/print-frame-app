@@ -1,0 +1,21 @@
+{% if item.properties._frame_type %}
+  <div class="cart-custom-data">
+    <p>
+      <strong>Frame Type:</strong>
+      {{ item.properties._frame_type }}</p>
+    <p>
+      <strong>Frame Style:</strong>
+      {{ item.properties._frame_style }}</p>
+    <p>
+      <strong>Orientation:</strong>
+      {{ item.properties._orientation }}</p>
+    <p>
+      <strong>Printing:</strong>
+      {{ item.properties._printing }}</p>
+    {% if item.properties._file_name %}
+      <p>
+        <strong>Uploaded File:</strong>
+        {{ item.properties._file_name }}</p>
+    {% endif %}
+  </div>
+{% endif %}
