@@ -37,9 +37,39 @@
 
       <!-- No form tag - prevents theme scripts from interfering -->
       <div id="customProductOptions" data-product-id="{{ product.variants.first.id }}">
-
         <!-- Frame Type -->
-        <div class="option-group">
+         <div class="option-group">
+            <label>Frame Type:</label>
+            <div class="frame-type-options">
+              {% for variant in product.variants %}
+                <button
+                  type="button"
+                  class="option-btn{% if forloop.first %} active{% endif %}"
+                  data-variant-id="{{ variant.id }}"
+                  data-type="{{ variant.title | escape }}"
+                  data-price="{{ variant.price | money_without_currency }}">
+                  {{ variant.title }}<br><span class="price">{{ variant.price | money }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+
+         {% comment %} <div class="option-group">
+            <label>Frame Type:</label>
+            <div class="frame-type-options">
+              {% for variant in product.variants %}
+                <button
+                  type="button"
+                  class="option-btn{% if forloop.first %} active{% endif %}"
+                  data-id="{{ variant.id }}"
+                  data-price="{{ variant.price | money }}">
+                  {{ variant.title }}<br><span class="price">{{ variant.price | money }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div> {% endcomment %}
+
+        {% comment %} <div class="option-group">
           <label>Frame Type:</label>
           <div class="frame-type-options">
             <button
@@ -64,7 +94,7 @@
               Prestige Framed<br><span class="price">$139</span>
             </button>
           </div>
-        </div>
+        </div> {% endcomment %}
 
         <!-- Frame Style -->
         <div class="option-group">
@@ -203,6 +233,21 @@
     </div>
   </div>
 </div>
+<script>
+  // Frame Type selection (with dynamic variant ID)
+document.querySelectorAll('.option-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
 
+    self.selectedOptions.frameType = this.dataset.type;
+    self.selectedOptions.price = parseFloat(this.dataset.price);
+    self.selectedOptions.variantId = this.dataset.variantId; // ✅ store selected variant ID
+
+    self.updatePreview();
+  });
+});
+
+</script>
 
 {% render 'print_frames_js' %}

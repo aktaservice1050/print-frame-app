@@ -27,7 +27,7 @@ scopes = "write_products"
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
 [app_proxy]
-url = "https://clair-unaimed-theresa.ngrok-free.dev"
+url = "https://print-frame-app.onrender.com/"
 prefix = "apps"
 subpath = "upload-url"
 

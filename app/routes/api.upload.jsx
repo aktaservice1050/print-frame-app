@@ -21,22 +21,16 @@ export const action = async ({ request }) => {
     console.log("📥 File received:", file?.name, file?.size);
 
     if (!file) {
-      return json(
-        { error: "কোনো ফাইল পাওয়া যায়নি" },
-        { status: 400, headers },
-      );
+      return json({ error: "File not found" }, { status: 400, headers });
     }
 
     // File validation
-    const maxSize = 5 * 1024 * 1024;
+    const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      return json(
-        { error: "ফাইল সাইজ ৫MB এর বেশি হতে পারবে না" },
-        { status: 400, headers },
-      );
+      return json({ error: "File size max 10MB" }, { status: 400, headers });
     }
 
-    // Buffer এ convert
+    // Buffer convert
     // eslint-disable-next-line no-undef
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileObject = {
@@ -46,7 +40,7 @@ export const action = async ({ request }) => {
       size: file.size,
     };
 
-    // S3 এ upload করুন
+    // S3 upload process
     console.log("☁️ Uploading to S3...");
     const folderName = shop
       ? `${shop.replace(".myshopify.com", "")}/uploads`
@@ -56,7 +50,7 @@ export const action = async ({ request }) => {
     if (!result.success) {
       console.error("❌ Upload failed:", result.error);
       return json(
-        { error: `আপলোড ব্যর্থ: ${result.error}` },
+        { error: `Upload failed: ${result.error}` },
         { status: 500, headers },
       );
     }
@@ -69,14 +63,14 @@ export const action = async ({ request }) => {
         fileUrl: result.url,
         fileName: file.name,
         fileSize: file.size,
-        message: "ফাইল সফলভাবে আপলোড হয়েছে!",
+        message: "File uploaded successfully",
       },
       { headers },
     );
   } catch (error) {
     console.error("💥 Error:", error);
     return json(
-      { error: `সার্ভার এরর: ${error.message}` },
+      { error: `Server err: ${error.message}` },
       { status: 500, headers },
     );
   }
