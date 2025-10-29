@@ -1,14 +1,20 @@
 <style>
-
+  .print-and-frames-main-wrap {
+    margin: 30px auto;
+  }
   .print-customizer-wrapper {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 40px;
-    padding: 20px;
-    max-width: 1200px;
+    padding: 0;
+    max-width: 100%;
     margin: 0 auto;
   }
-
+  h2.customizer-title {
+    font-size: 32px;
+    margin: 0 0 20px;
+    text-transform: uppercase;
+  }
   .preview-section {
     position: sticky;
     top: 20px;
@@ -17,15 +23,16 @@
 
   .frame-preview {
     width: 100%;
-    aspect-ratio: 1;
-    background: #f5f5f5;
+    aspect-ratio: 16 / 9;
+    background: #DBDBDB;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    border: 10px solid #000;
+    border: 4px solid #000;
     transition: all 0.3s ease;
     overflow: hidden;
+    border-radius: 16px;
   }
 
   .frame-preview.wood-grain {
@@ -80,32 +87,72 @@
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
+    align-items: flex-end;
   }
-
-  .option-btn,
+  .orient-btn span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .orient-btn span .radio-icon {
+    width: 14px;
+    height: 14px;
+    display: flex;
+    background: #ddd;
+    border-radius: 50%;
+    position: relative;
+    align-items: center;
+    justify-content: center;
+  }
+  .orient-btn span .radio-icon::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #999;
+    border-radius: 50%;
+  }
+  button.orient-btn.active span .radio-icon {
+    background: #8E8E93;
+  }
+  .option-btn {
+    border: none;
+    background: none;
+    padding: 0;
+  }
+  span.frame-type-title {
+    padding: 8px 16px;
+    display: block;
+    background: #EDEDED;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
   .style-btn,
   .orient-btn {
-    padding: 12px 20px;
-    border: 2px solid #ddd;
-    background: white;
+    border: none;
+    background: none;
     cursor: pointer;
     border-radius: 8px;
     transition: all 0.2s;
     font-size: 14px;
   }
 
-  .option-btn.active,
-  .style-btn.active,
-  .orient-btn.active {
+  .option-btn.active span.frame-type-title {
     border-color: #000;
-    background: #f5f5f5;
-    font-weight: 600;
+  }
+  .style-btn.active span {
+    border: 1px solid #000 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
 
+
   .option-btn .price {
-    font-weight: 600;
     display: block;
     margin-top: 4px;
+    font-size: 13px;
+    font-weight: 400;
   }
 
   .color-circle {
@@ -116,30 +163,52 @@
     margin-right: 8px;
     vertical-align: middle;
   }
-
+  .orient-btn {
+    min-width: 120px;
+  }
   .orient-icon {
     width: 40px;
     height: 30px;
     background: #ddd;
     margin: 0 auto 8px;
     border: 2px solid #999;
+    display: block !important;
   }
-
+  .orient-btn.active .orient-icon {
+    border: 1px solid #000 !important;
+    background: #bbb;
+  }
   .orient-icon.landscape {
-    width: 50px;
-    height: 35px;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 9 / 6;
+    border: none;
+    border-radius: 4px;
   }
   .orient-icon.portrait {
-    width: 35px;
-    height: 50px;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 7 / 8;
+    border: none;
+    border-radius: 4px;
   }
 
   .printing-options label {
-    display: block;
+    display: flex !important;
     margin-bottom: 8px;
     cursor: pointer;
+    align-items: flex-start;
+    gap: 8px;
   }
-
+  .printing-options input {
+    width: 20px;
+    height: 20px;
+    accent-color: #8E8E93;
+  }
+  .printing-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
   .quantity-selector {
     display: flex;
     align-items: center;
@@ -249,6 +318,12 @@
     }
     .preview-section {
       position: relative;
+    }
+    .option-group {
+      margin-bottom: 12px;
+    }
+    .option-group label {
+      display: none !important;
     }
   }
 </style>

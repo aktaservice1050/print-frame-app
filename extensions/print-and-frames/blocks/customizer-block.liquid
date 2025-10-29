@@ -6,147 +6,500 @@
     "settings": []
   }
 {% endschema %}
+<style>
+
+  .desktop-only {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-only {
+    display: none;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    .desktop-only {
+      display: none !important;
+    }
+
+    .mobile-only {
+      display: block !important;
+    }
+
+    .frame-select {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 16px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .frame-select:focus {
+      outline: none;
+      border-color: #000;
+    }
+    .options-section {
+      padding: 0;
+    }
+  }
+  /* Hide desktop upload on mobile */
+  @media (max-width: 768px) {
+    .options-section .upload-area {
+      display: none !important;
+    }
+
+    .options-section .security-note {
+      display: none !important;
+    }
+
+    /* Show upload button instead */
+    .option-group:has(#uploadArea)::after {
+      content: 'Tap to upload';
+      display: block;
+      padding: 15px;
+      background: #f5f5f5;
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .option-group:has(#uploadArea) {
+      cursor: pointer;
+      display: none;
+    }
+  }
+
+  /* Mobile Upload Popup */
+  .mobile-upload-popup {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    z-index: 9999;
+  }
+
+  .mobile-upload-popup.active {
+    display: flex;
+    align-items: center;
+  }
+
+  .mobile-upload-popup .popup-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: block !important;
+  }
+
+  .mobile-upload-popup .popup-content {
+    position: absolute;
+    bottom: unset;
+    left: 10px;
+    width: calc(100% - 20px);
+    max-height: 85vh;
+    background: white;
+    border-radius: 20px;
+    animation: slideUp 0.3s ease;
+    overflow-y: auto;
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 1;
+  }
+
+  .popup-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .close-popup {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #f5f5f5;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .popup-body {
+    padding: 20px;
+  }
+
+  .upload-area-popup {
+    border: 2px dashed #ddd;
+    border-radius: 12px;
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: #fafafa;
+  }
+
+  .upload-area-popup:hover {
+    border-color: #000;
+    background: #f5f5f5;
+  }
+
+  .upload-area-popup .upload-placeholder p {
+    margin: 10px 0 5px;
+    font-size: 15px;
+    color: #333;
+  }
+
+  .upload-area-popup .browse-link {
+    color: #007bff;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .upload-area-popup small {
+    color: #999;
+    font-size: 12px;
+  }
+
+  .upload-area-popup .file-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px;
+    background: #f0f0f0;
+    border-radius: 8px;
+  }
+
+  .upload-area-popup .file-name {
+    font-size: 14px;
+    color: #333;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .remove-file-popup {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 10px;
+  }
+
+  .upload-preview {
+    margin-top: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #eee;
+  }
+
+  .upload-preview img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .popup-body .security-note {
+    margin-top: 15px;
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+  }
+  /* Mobile upload trigger button */
+  .mobile-upload-trigger {
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    display: none;
+    background: transparent;
+    align-items: center;
+    gap: 6px;
+    color: #8E8E93;
+  }
+ .printing-options label > span i {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+      font-weight: 300;
+    }
+  @media (max-width: 768px) {
+    .mobile-upload-trigger {
+      display: flex;
+    }
+
+    .section-head-title-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    h2.customizer-title {
+      font-size: 24px;
+      margin: 0;
+      text-transform: capitalize;
+    }
+    .option-group.printing-options-group-wrap label {
+      display: flex !important;
+    }
+    .option-group.printing-options-group-wrap .printing-options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .printing-options label > span {
+      flex: 0 0 calc(100% - 40px);
+    }
+
+  }
+</style>
 <div class="print-and-frames-main-wrap">
-  <h2 class="customizer-title">Customize Your Print & Frame</h2>
+  <div class="section-head-title-wrap">
+    <h2 class="customizer-title">Prints and Frames</h2>
+
+    <!-- Mobile Upload Button -->
+    <div class="mobile-image-popup-button">
+      <button
+        type="button"
+        id="openMobileUpload"
+        class="mobile-upload-trigger">
+        <img
+          src="{{ "material-symbols-light_upload.png" |  asset_url  }}"
+          alt=""
+          width="20"
+          height="20">
+        Upload Certificate
+      </button>
+    </div>
+
+    <!-- Mobile Upload Popup -->
+    <div class="mobile-upload-popup" id="mobileUploadPopup">
+      <div class="popup-overlay"></div>
+      <div class="popup-content">
+        <div class="popup-header">
+          <h3>Upload Certificate</h3>
+          <button
+            type="button"
+            class="close-popup"
+            id="closeUploadPopup">×</button>
+        </div>
+        <div class="popup-body">
+          <!-- File Upload -->
+          <div class="upload-area-popup" id="uploadAreaPopup">
+            <input
+              type="file"
+              id="fileInputPopup"
+              accept="image/*,.pdf"
+              hidden>
+            <div class="upload-placeholder">
+              <svg
+                width="60"
+                height="60"
+                viewBox="0 0 24 24"
+                fill="#999">
+                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
+              </svg>
+              <p>Drag & drop or
+                <span class="browse-link">select a file</span>
+              </p>
+              <small>Upload your certificate (PDF, JPG, PNG, max 10 MB)</small>
+            </div>
+            <div
+              class="file-info"
+              id="fileInfoPopup"
+              style="display:none;">
+              <span class="file-name"></span>
+              <button type="button" class="remove-file-popup">×</button>
+            </div>
+          </div>
+          <p class="security-note">🔒 Your certificate is securely handled</p>
+
+          <!-- Preview after upload -->
+          <div
+            class="upload-preview"
+            id="uploadPreview"
+            style="display:none;">
+            <img
+              id="previewImagePopup"
+              alt="Preview"
+              width=""
+              height="">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="print-customizer-wrapper">
     <!-- Left Side - Preview -->
     <div class="preview-section">
       <div class="frame-preview" id="framePreview">
         <img
           id="uploadedImage"
-          src=""
+          src="{{ product.featured_image | img_url: 'master' }}"
           alt="Preview"
-          width=""
-          height=""
-          style="display:none;">
-        <div class="placeholder" id="placeholder">
-          <svg
-            width="100"
-            height="100"
-            viewBox="0 0 24 24"
-            fill="#ddd">
-            <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
-          </svg>
-          <p>Upload your image</p>
-        </div>
+          width="800"
+          height="800"
+          style="max-width:100%;height:auto;">
+
       </div>
     </div>
 
     <!-- Right Side - Options -->
     <div class="options-section">
-
       <!-- No form tag - prevents theme scripts from interfering -->
       <div id="customProductOptions" data-product-id="{{ product.variants.first.id }}">
         <!-- Frame Type -->
-         <div class="option-group">
-            <label>Frame Type:</label>
-            <div class="frame-type-options">
-              {% for variant in product.variants %}
-                <button
-                  type="button"
-                  class="option-btn{% if forloop.first %} active{% endif %}"
-                  data-variant-id="{{ variant.id }}"
-                  data-type="{{ variant.title | escape }}"
-                  data-price="{{ variant.price | money_without_currency }}">
-                  {{ variant.title }}<br><span class="price">{{ variant.price | money }}</span>
-                </button>
-              {% endfor %}
-            </div>
-          </div>
-
-         {% comment %} <div class="option-group">
-            <label>Frame Type:</label>
-            <div class="frame-type-options">
-              {% for variant in product.variants %}
-                <button
-                  type="button"
-                  class="option-btn{% if forloop.first %} active{% endif %}"
-                  data-id="{{ variant.id }}"
-                  data-price="{{ variant.price | money }}">
-                  {{ variant.title }}<br><span class="price">{{ variant.price | money }}</span>
-                </button>
-              {% endfor %}
-            </div>
-          </div> {% endcomment %}
-
-        {% comment %} <div class="option-group">
+        <div class="option-group">
           <label>Frame Type:</label>
-          <div class="frame-type-options">
-            <button
-              type="button"
-              class="option-btn active"
-              data-type="print-only"
-              data-price="49">
-              Print Only<br><span class="price">$49</span>
-            </button>
-            <button
-              type="button"
-              class="option-btn"
-              data-type="classic-framed"
-              data-price="69">
-              Classic Framed<br><span class="price">$69</span>
-            </button>
-            <button
-              type="button"
-              class="option-btn"
-              data-type="prestige-framed"
-              data-price="139">
-              Prestige Framed<br><span class="price">$139</span>
-            </button>
+          <!-- Desktop: Button view -->
+          <div class="frame-type-options desktop-only">
+            {% for variant in product.variants %}
+              <button
+                type="button"
+                class="option-btn{% if forloop.first %} active{% endif %}"
+                data-variant-id="{{ variant.id }}"
+                data-type="{{ variant.title | escape }}"
+                data-price="{{ variant.price | money_without_currency }}">
+                <span class="frame-type-title">{{ variant.title }}</span>
+                <span class="price">{{ variant.price | money }}</span>
+              </button>
+            {% endfor %}
           </div>
-        </div> {% endcomment %}
 
+          <!-- Mobile: Select dropdown -->
+          <div class="frame-type-select mobile-only">
+            <select id="frameTypeSelect" class="frame-select">
+              {% for variant in product.variants %}
+                <option
+                  value="{{ variant.id }}"
+                  data-type="{{ variant.title | escape }}"
+                  data-price="{{ variant.price | money_without_currency }}"
+                  {% if forloop.first %}
+                  selected{% endif %}>
+                  {{ variant.title }} - {{ variant.price | money }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
         <!-- Frame Style -->
         <div class="option-group">
           <label>Frame Style / Color:</label>
-          <div class="frame-style-options">
+
+          <!-- Desktop: Button view -->
+          <div class="frame-style-options desktop-only">
             <button
               type="button"
               class="style-btn active"
               data-style="black-matte">
-              <span class="color-circle" style="background: #000;"></span>
+              <span class="color-circle" style="background: #8E8E93;"></span>
               Black Matte
             </button>
             <button
               type="button"
               class="style-btn"
               data-style="wood-grain">
-              <span class="color-circle" style="background: #8B6F47;"></span>
+              <span class="color-circle" style="background: #8B6F4770;"></span>
               Wood Grain
             </button>
             <button
               type="button"
               class="style-btn"
               data-style="white">
-              <span class="color-circle" style="background: #fff; border: 1px solid #ddd;"></span>
+              <span class="color-circle" style="background: #ffffff70; border: 1px solid #ddd;"></span>
               White
             </button>
+          </div>
+
+          <!-- Mobile: Select dropdown -->
+          <div class="mobile-only">
+            <select id="frameStyleSelect" class="frame-select">
+              <option value="black-matte" selected>Black Matte</option>
+              <option value="wood-grain">Wood Grain</option>
+              <option value="white">White</option>
+            </select>
           </div>
         </div>
 
         <!-- Orientation -->
         <div class="option-group">
           <label>Orientation:</label>
-          <div class="orientation-options">
+
+          <!-- Desktop: Button view -->
+          <div class="orientation-options desktop-only">
             <button
               type="button"
               class="orient-btn active"
               data-orient="landscape">
               <div class="orient-icon landscape"></div>
-              Landscape
+              <span>
+                <span class="radio-icon"></span>
+                Landscape</span>
             </button>
             <button
               type="button"
               class="orient-btn"
               data-orient="portrait">
               <div class="orient-icon portrait"></div>
-              Portrait
+              <span>
+                <span class="radio-icon"></span>
+                Portrait</span>
             </button>
+          </div>
+
+          <!-- Mobile: Select dropdown -->
+          <div class="mobile-only">
+            <select id="orientationSelect" class="frame-select">
+              <option value="landscape" selected>Landscape</option>
+              <option value="portrait">Portrait</option>
+            </select>
           </div>
         </div>
 
         <!-- Printing -->
-        <div class="option-group">
+        <div class="option-group printing-options-group-wrap">
           <label>Printing:</label>
           <div class="printing-options">
             <label>
@@ -162,13 +515,16 @@
                 type="radio"
                 name="printing_type"
                 value="full-color-upgrade">
-              Full Color + Foil (upgrade)
+              <span>
+                <span>Full Color + Foil (upgrade)</span>
+                <i>We apply foil to the elements that look best (e.g., logos/seals/accent text).</i>
+              </span>
             </label>
           </div>
         </div>
 
         <!-- Quantity -->
-        <div class="option-group">
+        <div class="option-group quantity-selector-group-wrap">
           <label>Quantity:</label>
           <div class="quantity-selector">
             <button
@@ -189,7 +545,7 @@
         </div>
 
         <!-- File Upload -->
-        <div class="option-group">
+        <div class="option-group file-upload-group-wrap">
           <label>Upload Certificate:</label>
           <div class="upload-area" id="uploadArea">
             <input
@@ -235,7 +591,7 @@
 </div>
 <script>
   // Frame Type selection (with dynamic variant ID)
-document.querySelectorAll('.option-btn').forEach(btn => {
+  document.querySelectorAll('.option-btn').forEach(btn => {
   btn.addEventListener('click', function() {
     document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
@@ -246,8 +602,119 @@ document.querySelectorAll('.option-btn').forEach(btn => {
 
     self.updatePreview();
   });
-});
+  });
+</script>
+<script>
+  // ============ MOBILE UPLOAD POPUP ============
+  const uploadPopup = document.getElementById('mobileUploadPopup');
+  const openMobileUploadBtn = document.getElementById('openMobileUpload');
+  const closeUploadBtn = document.getElementById('closeUploadPopup');
+  const fileInputPopup = document.getElementById('fileInputPopup');
+  const uploadAreaPopup = document.getElementById('uploadAreaPopup');
+  const fileInfoPopup = document.getElementById('fileInfoPopup');
+  const uploadPreview = document.getElementById('uploadPreview');
+  const previewImagePopup = document.getElementById('previewImagePopup');
 
+  // Open popup on button click
+  if (openMobileUploadBtn && uploadPopup) {
+    openMobileUploadBtn.addEventListener('click', function() {
+      uploadPopup.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    });
+  }
+
+  // Close popup
+  if (closeUploadBtn && uploadPopup) {
+    closeUploadBtn.addEventListener('click', function() {
+      uploadPopup.classList.remove('active');
+      document.body.style.overflow = '';
+    });
+  }
+
+  // Close on overlay click
+  if (uploadPopup) {
+    const overlay = uploadPopup.querySelector('.popup-overlay');
+    if (overlay) {
+      overlay.addEventListener('click', function() {
+        uploadPopup.classList.remove('active');
+        document.body.style.overflow = '';
+      });
+    }
+  }
+
+  // Upload area click
+  if (uploadAreaPopup && fileInputPopup) {
+    uploadAreaPopup.addEventListener('click', function() {
+      fileInputPopup.click();
+    });
+  }
+
+  // File selection in popup
+  if (fileInputPopup) {
+    fileInputPopup.addEventListener('change', function() {
+      if (this.files.length > 0) {
+        const file = this.files[0];
+
+        // Trigger the main file handler
+        const mainFileInput = document.getElementById('fileInput');
+        if (mainFileInput) {
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(file);
+          mainFileInput.files = dataTransfer.files;
+
+          // Trigger change event on main input
+          const event = new Event('change', { bubbles: true });
+          mainFileInput.dispatchEvent(event);
+        }
+
+        // Show preview in popup
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            if (previewImagePopup && uploadPreview) {
+              previewImagePopup.src = e.target.result;
+              uploadPreview.style.display = 'block';
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+
+        // Update popup UI
+        if (uploadAreaPopup && fileInfoPopup) {
+          const placeholder = uploadAreaPopup.querySelector('.upload-placeholder');
+          if (placeholder) placeholder.style.display = 'none';
+          fileInfoPopup.style.display = 'flex';
+          const fileName = fileInfoPopup.querySelector('.file-name');
+          if (fileName) fileName.textContent = file.name;
+        }
+
+        // Close popup after 1.5 seconds
+        setTimeout(() => {
+          if (uploadPopup) {
+            uploadPopup.classList.remove('active');
+            document.body.style.overflow = '';
+          }
+        }, 1500);
+      }
+    });
+  }
+
+  // Remove file in popup
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('remove-file-popup')) {
+      e.stopPropagation();
+      if (fileInputPopup) fileInputPopup.value = '';
+      const mainFileInput = document.getElementById('fileInput');
+      if (mainFileInput) mainFileInput.value = '';
+
+      if (uploadAreaPopup) {
+        const placeholder = uploadAreaPopup.querySelector('.upload-placeholder');
+        if (placeholder) placeholder.style.display = 'flex';
+      }
+      if (fileInfoPopup) fileInfoPopup.style.display = 'none';
+      if (uploadPreview) uploadPreview.style.display = 'none';
+    }
+  });
 </script>
 
 {% render 'print_frames_js' %}

@@ -1,0 +1,255 @@
+{% render 'print-frames_css' %}
+{% schema %}
+  {
+    "name": "Print & Frame Customizer",
+    "target": "section",
+    "settings": []
+  }
+{% endschema %}
+<div class="print-and-frames-main-wrap">
+  <h2 class="customizer-title">Customize Your Print & Frame</h2>
+  <div class="print-customizer-wrapper">
+    <!-- Left Side - Preview -->
+    <div class="preview-section">
+      <div class="frame-preview" id="framePreview">
+        <img
+          id="uploadedImage"
+          src="{{ product.featured_image | img_url: 'master' }}"
+          alt="Preview"
+          width=""
+          height=""
+
+          >
+        {% comment %} <div class="placeholder" id="placeholder">
+          <svg
+            width="100"
+            height="100"
+            viewBox="0 0 24 24"
+            fill="#ddd">
+            <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+          </svg>
+          <p>Upload your image</p>
+        </div> {% endcomment %}
+      </div>
+    </div>
+
+    <!-- Right Side - Options -->
+    <div class="options-section">
+
+      <!-- No form tag - prevents theme scripts from interfering -->
+      <div id="customProductOptions" data-product-id="{{ product.variants.first.id }}">
+        <!-- Frame Type -->
+          <div class="option-group">
+            <label>Frame Type:</label>
+            <div class="frame-type-options">
+              {% for variant in product.variants %}
+                <button
+                  type="button"
+                  class="option-btn{% if forloop.first %} active{% endif %}"
+                  data-variant-id="{{ variant.id }}"
+                  data-type="{{ variant.title | escape }}"
+                  data-price="{{ variant.price | money_without_currency }}">
+                  <span class="frame-type-title">{{ variant.title }}</span>
+                  <span class="price">{{ variant.price | money }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+
+         {% comment %} <div class="option-group">
+            <label>Frame Type:</label>
+            <div class="frame-type-options">
+              {% for variant in product.variants %}
+                <button
+                  type="button"
+                  class="option-btn{% if forloop.first %} active{% endif %}"
+                  data-id="{{ variant.id }}"
+                  data-price="{{ variant.price | money }}">
+                  {{ variant.title }}<br><span class="price">{{ variant.price | money }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div> {% endcomment %}
+
+        {% comment %} <div class="option-group">
+          <label>Frame Type:</label>
+          <div class="frame-type-options">
+            <button
+              type="button"
+              class="option-btn active"
+              data-type="print-only"
+              data-price="49">
+              Print Only<br><span class="price">$49</span>
+            </button>
+            <button
+              type="button"
+              class="option-btn"
+              data-type="classic-framed"
+              data-price="69">
+              Classic Framed<br><span class="price">$69</span>
+            </button>
+            <button
+              type="button"
+              class="option-btn"
+              data-type="prestige-framed"
+              data-price="139">
+              Prestige Framed<br><span class="price">$139</span>
+            </button>
+          </div>
+        </div> {% endcomment %}
+
+        <!-- Frame Style -->
+        <div class="option-group">
+          <label>Frame Style / Color:</label>
+          <div class="frame-style-options">
+            <button
+              type="button"
+              class="style-btn active"
+              data-style="black-matte">
+              <span class="color-circle" style="background: #8E8E93;"></span>
+              Black Matte
+            </button>
+            <button
+              type="button"
+              class="style-btn"
+              data-style="wood-grain">
+              <span class="color-circle" style="background: #8B6F4770;"></span>
+              Wood Grain
+            </button>
+            <button
+              type="button"
+              class="style-btn"
+              data-style="white">
+              <span class="color-circle" style="background: #ffffff70; border: 1px solid #ddd;"></span>
+              White
+            </button>
+          </div>
+        </div>
+
+        <!-- Orientation -->
+        <div class="option-group">
+          <label>Orientation:</label>
+          <div class="orientation-options">
+            <button
+              type="button"
+              class="orient-btn active"
+              data-orient="landscape">
+              <div class="orient-icon landscape"></div>
+             <span> <span class="radio-icon"></span>  Landscape</span>
+            </button>
+            <button
+              type="button"
+              class="orient-btn"
+              data-orient="portrait">
+              <div class="orient-icon portrait"></div>
+              <span> <span class="radio-icon"></span>  Portrait</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Printing -->
+        <div class="option-group">
+          <label>Printing:</label>
+          <div class="printing-options">
+            <label>
+              <input
+                type="radio"
+                name="printing_type"
+                value="full-color-standard"
+                checked>
+              Full Color (standard)
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="printing_type"
+                value="full-color-upgrade">
+              Full Color + Foil (upgrade)
+            </label>
+          </div>
+        </div>
+
+        <!-- Quantity -->
+        <div class="option-group">
+          <label>Quantity:</label>
+          <div class="quantity-selector">
+            <button
+              type="button"
+              class="qty-btn"
+              id="decreaseQty">-</button>
+            <input
+              type="number"
+              id="quantity"
+              value="1"
+              min="1"
+              readonly>
+            <button
+              type="button"
+              class="qty-btn"
+              id="increaseQty">+</button>
+          </div>
+        </div>
+
+        <!-- File Upload -->
+        <div class="option-group">
+          <label>Upload Certificate:</label>
+          <div class="upload-area" id="uploadArea">
+            <input
+              type="file"
+              id="fileInput"
+              accept="image/*,.pdf"
+              hidden>
+            <div class="upload-placeholder">
+              <svg
+                width="60"
+                height="60"
+                viewBox="0 0 24 24"
+                fill="#999">
+                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
+              </svg>
+              <p>Drag & drop or
+                <span class="browse-link">select a file</span>
+              </p>
+              <small>Upload your certificate (PDF, JPG, PNG, max 10 MB)</small>
+            </div>
+            <div
+              class="file-info"
+              id="fileInfo"
+              style="display:none;">
+              <span class="file-name"></span>
+              <button type="button" class="remove-file">×</button>
+            </div>
+          </div>
+          <p class="security-note">🔒 Your certificate is securely handled</p>
+        </div>
+
+        <!-- Add to Cart Button -->
+        <button
+          type="button"
+          class="add-to-cart-btn"
+          id="addToCartBtn"
+          disabled>
+          Add to cart
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  // Frame Type selection (with dynamic variant ID)
+document.querySelectorAll('.option-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+
+    self.selectedOptions.frameType = this.dataset.type;
+    self.selectedOptions.price = parseFloat(this.dataset.price);
+    self.selectedOptions.variantId = this.dataset.variantId; // ✅ store selected variant ID
+
+    self.updatePreview();
+  });
+});
+
+</script>
+
+{% render 'print_frames_js' %}
