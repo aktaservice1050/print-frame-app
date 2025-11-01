@@ -17,7 +17,9 @@
   .mobile-only {
     display: none;
   }
-
+.options-section {
+    padding: 0 20px 20px !important;
+}
   /* Mobile responsive */
   @media (max-width: 768px) {
     .desktop-only {
@@ -44,7 +46,10 @@
       border-color: #000;
     }
     .options-section {
-      padding: 0;
+      padding: 0!important;
+    }
+    .mobile-upload-trigger img {
+      width: 20px;
     }
   }
   /* Hide desktop upload on mobile */
@@ -257,13 +262,27 @@
     gap: 6px;
     color: #8E8E93;
   }
- .printing-options label > span i {
-      display: block;
-      font-size: 12px;
-      color: #666;
-      margin-top: 4px;
-      font-weight: 300;
-    }
+  .printing-options label > span i {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+    font-weight: 300;
+  }
+  .upload-placeholder p {
+    margin: 0;
+  }
+  .upload-placeholder img {
+    margin: auto;
+    width: 60px;
+    height: 60px;
+  }
+  .upload-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
   @media (max-width: 768px) {
     .mobile-upload-trigger {
       display: flex;
@@ -276,7 +295,7 @@
       margin-bottom: 20px;
     }
     h2.customizer-title {
-      font-size: 24px;
+      font-size: 22px;
       margin: 0;
       text-transform: capitalize;
     }
@@ -292,7 +311,6 @@
     .printing-options label > span {
       flex: 0 0 calc(100% - 40px);
     }
-
   }
 </style>
 <div class="print-and-frames-main-wrap">
@@ -334,13 +352,11 @@
               accept="image/*,.pdf"
               hidden>
             <div class="upload-placeholder">
-              <svg
+              <img
+                src="{{ "upload-icon.svg" |  asset_url }}"
+                alt=""
                 width="60"
-                height="60"
-                viewBox="0 0 24 24"
-                fill="#999">
-                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
-              </svg>
+                height="60">
               <p>Drag & drop or
                 <span class="browse-link">select a file</span>
               </p>
@@ -554,13 +570,11 @@
               accept="image/*,.pdf"
               hidden>
             <div class="upload-placeholder">
-              <svg
+              <img
+                src="{{ "upload-icon.svg" |  asset_url }}"
+                alt=""
                 width="60"
-                height="60"
-                viewBox="0 0 24 24"
-                fill="#999">
-                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" />
-              </svg>
+                height="60">
               <p>Drag & drop or
                 <span class="browse-link">select a file</span>
               </p>
