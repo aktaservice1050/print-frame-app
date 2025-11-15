@@ -17,9 +17,9 @@
   .mobile-only {
     display: none;
   }
-.options-section {
-    padding: 0 20px 20px !important;
-}
+  .options-section {
+    padding: 0 0 20px 20px !important;
+  }
   /* Mobile responsive */
   @media (max-width: 768px) {
     .desktop-only {
@@ -32,13 +32,27 @@
 
     .frame-select {
       width: 100%;
-      padding: 12px 15px;
+      padding: 14px 35px 14px 10px;
       font-size: 16px;
-      border: 2px solid #ddd;
+      border: none;
       border-radius: 8px;
       background: white;
       cursor: pointer;
       font-family: inherit;
+      box-shadow: 0 4px 31.3px 0 #bababa70;
+      appearance: none;
+      /* Disable the default arrow */
+      -webkit-appearance: none;
+      /* For WebKit-based browsers */
+      -moz-appearance: none;
+      /* For Firefox */
+      width: 100%;
+      background-image: url('data:image/svg+xml;utf8, <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L12 15L18 9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor"/></svg>');
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 20px;
+      cursor: pointer;
+      text-transform: capitalize;
     }
 
     .frame-select:focus {
@@ -46,7 +60,7 @@
       border-color: #000;
     }
     .options-section {
-      padding: 0!important;
+      padding: 0 !important;
     }
     .mobile-upload-trigger img {
       width: 20px;
@@ -110,7 +124,7 @@
 
   .mobile-upload-popup .popup-content {
     position: absolute;
-    bottom: unset;
+    bottom: 30%;
     left: 10px;
     width: calc(100% - 20px);
     max-height: 85vh;
@@ -283,7 +297,60 @@
     align-items: center;
     justify-content: center;
   }
+
+span.sub-text {
+    font-weight: normal;
+  }
+  .input-link-wrap {
+    background: #fff;
+    padding: 4px;
+    border-radius: 0;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    margin: 10px 0;
+    height: 40px;
+  }
+  .input-link-wrap input {
+    border: none;
+    outline: none;
+    padding: 8px;
+    font-size: 14px;
+  }
+  .input-link-wrap input:focus-visible {
+    outline: none;
+    outline-offset: none;
+    box-shadow: none;
+  }
+  .input-link-wrap button {
+    border: none;
+    background: #D1A447;
+    cursor: pointer;
+    padding: 6px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0;
+  }
+  .input-link-container-and-upload-button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .input-link-container-and-upload-button > button:last-child {
+    background: #3A012E;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 0;
+    border: none;
+    cursor: pointer;
+    height: 38px;
+  }
   @media (max-width: 768px) {
+    .input-link-container-and-upload-button {
+      display: grid;
+      gap: 10px;
+      width: 100%;
+    }
     .mobile-upload-trigger {
       display: flex;
     }
@@ -295,13 +362,17 @@
       margin-bottom: 20px;
     }
     h2.customizer-title {
-      font-size: 22px;
+      font-size: 24px;
       margin: 0;
       text-transform: capitalize;
+      font-weight: 700;
     }
     .option-group.printing-options-group-wrap label {
       display: flex !important;
     }
+    .option-group.quantity-selector-group-wrap label {
+    display: flex !important;
+}
     .option-group.printing-options-group-wrap .printing-options {
       display: flex;
       flex-direction: column;
@@ -313,292 +384,318 @@
     }
   }
 </style>
-<div class="print-and-frames-main-wrap">
-  <div class="section-head-title-wrap">
-    <h2 class="customizer-title">Prints and Frames</h2>
+<div class="custom-container">
+  <div class="print-and-frames-main-wrap">
+    <div class="section-head-title-wrap">
+      <h2 class="customizer-title">Prints and Frames</h2>
 
-    <!-- Mobile Upload Button -->
-    <div class="mobile-image-popup-button">
-      <button
-        type="button"
-        id="openMobileUpload"
-        class="mobile-upload-trigger">
-        <img
-          src="{{ "material-symbols-light_upload.png" |  asset_url  }}"
-          alt=""
-          width="20"
-          height="20">
-        Upload Certificate
-      </button>
-    </div>
-
-    <!-- Mobile Upload Popup -->
-    <div class="mobile-upload-popup" id="mobileUploadPopup">
-      <div class="popup-overlay"></div>
-      <div class="popup-content">
-        <div class="popup-header">
-          <h3>Upload Certificate</h3>
-          <button
-            type="button"
-            class="close-popup"
-            id="closeUploadPopup">×</button>
-        </div>
-        <div class="popup-body">
-          <!-- File Upload -->
-          <div class="upload-area-popup" id="uploadAreaPopup">
-            <input
-              type="file"
-              id="fileInputPopup"
-              accept="image/*,.pdf"
-              hidden>
-            <div class="upload-placeholder">
-              <img
-                src="{{ "upload-icon.svg" |  asset_url }}"
-                alt=""
-                width="60"
-                height="60">
-              <p>Drag & drop or
-                <span class="browse-link">select a file</span>
-              </p>
-              <small>Upload your certificate (PDF, JPG, PNG, max 10 MB)</small>
-            </div>
-            <div
-              class="file-info"
-              id="fileInfoPopup"
-              style="display:none;">
-              <span class="file-name"></span>
-              <button type="button" class="remove-file-popup">×</button>
-            </div>
-          </div>
-          <p class="security-note">🔒 Your certificate is securely handled</p>
-
-          <!-- Preview after upload -->
-          <div
-            class="upload-preview"
-            id="uploadPreview"
-            style="display:none;">
-            <img
-              id="previewImagePopup"
-              alt="Preview"
-              width=""
-              height="">
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="print-customizer-wrapper">
-    <!-- Left Side - Preview -->
-    <div class="preview-section">
-      <div class="frame-preview" id="framePreview">
-        <img
-          id="uploadedImage"
-          src="{{ product.featured_image | img_url: 'master' }}"
-          alt="Preview"
-          width="800"
-          height="800"
-          style="max-width:100%;height:auto;">
-
-      </div>
-    </div>
-
-    <!-- Right Side - Options -->
-    <div class="options-section">
-      <!-- No form tag - prevents theme scripts from interfering -->
-      <div id="customProductOptions" data-product-id="{{ product.variants.first.id }}">
-        <!-- Frame Type -->
-        <div class="option-group">
-          <label>Frame Type:</label>
-          <!-- Desktop: Button view -->
-          <div class="frame-type-options desktop-only">
-            {% for variant in product.variants %}
-              <button
-                type="button"
-                class="option-btn{% if forloop.first %} active{% endif %}"
-                data-variant-id="{{ variant.id }}"
-                data-type="{{ variant.title | escape }}"
-                data-price="{{ variant.price | money_without_currency }}">
-                <span class="frame-type-title">{{ variant.title }}</span>
-                <span class="price">{{ variant.price | money }}</span>
-              </button>
-            {% endfor %}
-          </div>
-
-          <!-- Mobile: Select dropdown -->
-          <div class="frame-type-select mobile-only">
-            <select id="frameTypeSelect" class="frame-select">
-              {% for variant in product.variants %}
-                <option
-                  value="{{ variant.id }}"
-                  data-type="{{ variant.title | escape }}"
-                  data-price="{{ variant.price | money_without_currency }}"
-                  {% if forloop.first %}
-                  selected{% endif %}>
-                  {{ variant.title }} - {{ variant.price | money }}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <!-- Frame Style -->
-        <div class="option-group">
-          <label>Frame Style / Color:</label>
-
-          <!-- Desktop: Button view -->
-          <div class="frame-style-options desktop-only">
-            <button
-              type="button"
-              class="style-btn active"
-              data-style="black-matte">
-              <span class="color-circle" style="background: #8E8E93;"></span>
-              Black Matte
-            </button>
-            <button
-              type="button"
-              class="style-btn"
-              data-style="wood-grain">
-              <span class="color-circle" style="background: #8B6F4770;"></span>
-              Wood Grain
-            </button>
-            <button
-              type="button"
-              class="style-btn"
-              data-style="white">
-              <span class="color-circle" style="background: #ffffff70; border: 1px solid #ddd;"></span>
-              White
-            </button>
-          </div>
-
-          <!-- Mobile: Select dropdown -->
-          <div class="mobile-only">
-            <select id="frameStyleSelect" class="frame-select">
-              <option value="black-matte" selected>Black Matte</option>
-              <option value="wood-grain">Wood Grain</option>
-              <option value="white">White</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Orientation -->
-        <div class="option-group">
-          <label>Orientation:</label>
-
-          <!-- Desktop: Button view -->
-          <div class="orientation-options desktop-only">
-            <button
-              type="button"
-              class="orient-btn active"
-              data-orient="landscape">
-              <div class="orient-icon landscape"></div>
-              <span>
-                <span class="radio-icon"></span>
-                Landscape</span>
-            </button>
-            <button
-              type="button"
-              class="orient-btn"
-              data-orient="portrait">
-              <div class="orient-icon portrait"></div>
-              <span>
-                <span class="radio-icon"></span>
-                Portrait</span>
-            </button>
-          </div>
-
-          <!-- Mobile: Select dropdown -->
-          <div class="mobile-only">
-            <select id="orientationSelect" class="frame-select">
-              <option value="landscape" selected>Landscape</option>
-              <option value="portrait">Portrait</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Printing -->
-        <div class="option-group printing-options-group-wrap">
-          <label>Printing:</label>
-          <div class="printing-options">
-            <label>
-              <input
-                type="radio"
-                name="printing_type"
-                value="full-color-standard"
-                checked>
-              Full Color (standard)
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="printing_type"
-                value="full-color-upgrade">
-              <span>
-                <span>Full Color + Foil (upgrade)</span>
-                <i>We apply foil to the elements that look best (e.g., logos/seals/accent text).</i>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Quantity -->
-        <div class="option-group quantity-selector-group-wrap">
-          <label>Quantity:</label>
-          <div class="quantity-selector">
-            <button
-              type="button"
-              class="qty-btn"
-              id="decreaseQty">-</button>
-            <input
-              type="number"
-              id="quantity"
-              value="1"
-              min="1"
-              readonly>
-            <button
-              type="button"
-              class="qty-btn"
-              id="increaseQty">+</button>
-          </div>
-        </div>
-
-        <!-- File Upload -->
-        <div class="option-group file-upload-group-wrap">
-          <label>Upload Certificate:</label>
-          <div class="upload-area" id="uploadArea">
-            <input
-              type="file"
-              id="fileInput"
-              accept="image/*,.pdf"
-              hidden>
-            <div class="upload-placeholder">
-              <img
-                src="{{ "upload-icon.svg" |  asset_url }}"
-                alt=""
-                width="60"
-                height="60">
-              <p>Drag & drop or
-                <span class="browse-link">select a file</span>
-              </p>
-              <small>Upload your certificate (PDF, JPG, PNG, max 10 MB)</small>
-            </div>
-            <div
-              class="file-info"
-              id="fileInfo"
-              style="display:none;">
-              <span class="file-name"></span>
-              <button type="button" class="remove-file">×</button>
-            </div>
-          </div>
-          <p class="security-note">🔒 Your certificate is securely handled</p>
-        </div>
-
-        <!-- Add to Cart Button -->
+      <!-- Mobile Upload Button -->
+      <div class="mobile-image-popup-button">
         <button
           type="button"
-          class="add-to-cart-btn"
-          id="addToCartBtn"
-          disabled>
-          Add to cart
+          id="openMobileUpload"
+          class="mobile-upload-trigger">
+          <img
+            src="{{ "material-symbols-light_upload.png" |  asset_url  }}"
+            alt=""
+            width="20"
+            height="20">
+          Upload Certificate
         </button>
+      </div>
+
+      <!-- Mobile Upload Popup -->
+      <div class="mobile-upload-popup" id="mobileUploadPopup">
+        <div class="popup-overlay"></div>
+        <div class="popup-content">
+          <div class="popup-header">
+            <h3>Upload Certificate</h3>
+            <button
+              type="button"
+              class="close-popup"
+              id="closeUploadPopup">×</button>
+          </div>
+          <div class="popup-body">
+            <!-- File Upload -->
+            <div class="upload-area-popup" id="uploadAreaPopup">
+              <input
+                type="file"
+                id="fileInputPopup"
+                accept="image/*,.pdf"
+                hidden>
+              <div class="upload-placeholder">
+                <img
+                  src="{{ "upload-icon.svg" |  asset_url }}"
+                  alt=""
+                  width="60"
+                  height="60">
+                <p>Drag & drop or
+                  <span class="browse-link">select a file</span>
+                </p>
+                 <div class="input-link-container-and-upload-button">
+                  <div class="input-link-wrap">
+                    <input
+                      type="url"
+                      name=""
+                      id="">
+                    <button>{% render 'angle-arrow' %}</button>
+                  </div>
+                  <button>Upload</button>
+                </div>
+                 <small>Upload your certificate (PDF, JPG, PNG, max 10 MB, min 150 DPI) by dragging it here or clicking to select from your device.</small>
+              </div>
+              <div
+                class="file-info"
+                id="fileInfoPopup"
+                style="display:none;">
+                <span class="file-name"></span>
+                <button type="button" class="remove-file-popup">×</button>
+              </div>
+            </div>
+            <p class="security-note">🔒 Your certificate is securely handled</p>
+
+            <!-- Preview after upload -->
+            <div
+              class="upload-preview"
+              id="uploadPreview"
+              style="display:none;">
+              <img
+                id="previewImagePopup"
+                alt="Preview"
+                width=""
+                height="">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="print-customizer-wrapper">
+      <!-- Left Side - Preview -->
+      <div class="preview-section">
+        <div class="frame-preview" id="framePreview">
+          <img
+            id="uploadedImage"
+            src="{{ product.featured_image | img_url: 'master' }}"
+            alt="Preview"
+            width="800"
+            height="800"
+            style="max-width:100%;height:auto;">
+
+        </div>
+      </div>
+
+      <!-- Right Side - Options -->
+      <div class="options-section">
+        <!-- No form tag - prevents theme scripts from interfering -->
+        <div id="customProductOptions" data-product-id="{{ product.variants.first.id }}">
+          <!-- Frame Type -->
+          <div class="option-group">
+            <label>Frame Type:</label>
+            <!-- Desktop: Button view -->
+            <div class="frame-type-options desktop-only">
+              {% for variant in product.variants %}
+                <button
+                  type="button"
+                  class="option-btn{% if forloop.first %} active{% endif %}"
+                  data-variant-id="{{ variant.id }}"
+                  data-type="{{ variant.title | escape }}"
+                  data-price="{{ variant.price | money_without_currency }}">
+                  <span class="frame-type-title">{{ variant.title }}</span>
+                  <span class="price">{{ variant.price | money }}</span>
+                </button>
+              {% endfor %}
+            </div>
+
+            <!-- Mobile: Select dropdown -->
+            <div class="frame-type-select mobile-only">
+              <select id="frameTypeSelect" class="frame-select">
+                {% for variant in product.variants %}
+                  <option
+                    value="{{ variant.id }}"
+                    data-type="{{ variant.title | escape }}"
+                    data-price="{{ variant.price | money_without_currency }}"
+                    {% if forloop.first %}
+                    selected{% endif %}>
+                    {{ variant.title }} - {{ variant.price | money }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <!-- Frame Style -->
+          <div class="option-group">
+            <label>Frame Style / Color:</label>
+
+            <!-- Desktop: Button view -->
+            <div class="frame-style-options desktop-only">
+              <button
+                type="button"
+                class="style-btn active"
+                data-style="black-matte">
+                <span class="color-circle" style="background: #8E8E93;"></span>
+                Black Matte
+              </button>
+              <button
+                type="button"
+                class="style-btn"
+                data-style="wood-grain">
+                <span class="color-circle" style="background: #8B6F4770;"></span>
+                Wood Grain
+              </button>
+              <button
+                type="button"
+                class="style-btn"
+                data-style="white">
+                <span class="color-circle" style="background: #ffffff70; border: 1px solid #ddd;"></span>
+                White
+              </button>
+            </div>
+
+            <!-- Mobile: Select dropdown -->
+            <div class="mobile-only">
+              <select id="frameStyleSelect" class="frame-select">
+                <option value="black-matte" selected>Black Matte</option>
+                <option value="wood-grain">Wood Grain</option>
+                <option value="white">White</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Orientation -->
+          <div class="option-group">
+            <label>Orientation:</label>
+
+            <!-- Desktop: Button view -->
+            <div class="orientation-options desktop-only">
+              <button
+                type="button"
+                class="orient-btn active"
+                data-orient="landscape">
+                <div class="orient-icon landscape"></div>
+                <span>
+                  <span class="radio-icon"></span>
+                  Landscape</span>
+              </button>
+              <button
+                type="button"
+                class="orient-btn"
+                data-orient="portrait">
+                <div class="orient-icon portrait"></div>
+                <span>
+                  <span class="radio-icon"></span>
+                  Portrait</span>
+              </button>
+            </div>
+
+            <!-- Mobile: Select dropdown -->
+            <div class="mobile-only">
+              <select id="orientationSelect" class="frame-select">
+                <option value="landscape" selected>Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Printing -->
+          <div class="option-group printing-options-group-wrap">
+            <label>Printing:</label>
+            <div class="printing-options">
+              <label>
+                <input
+                  type="radio"
+                  name="printing_type"
+                  value="full-color-standard"
+                  checked>
+                <span>Full Color
+                  <span class="sub-text">(standard)</span>
+                </span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="printing_type"
+                  value="full-color-upgrade">
+                <span>
+                  <span>Full Color + Foil
+                    <span class="sub-text">(upgrade)</span>
+                  </span>
+                  <i>We apply foil to the elements that look best (e.g., logos/seals/accent text).</i>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Quantity -->
+          <div class="option-group quantity-selector-group-wrap">
+            <label>Quantity:</label>
+            <div class="quantity-selector">
+              <button
+                type="button"
+                class="qty-btn"
+                id="decreaseQty">-</button>
+              <input
+                type="number"
+                id="quantity"
+                value="1"
+                min="1"
+                readonly>
+              <button
+                type="button"
+                class="qty-btn"
+                id="increaseQty">+</button>
+            </div>
+          </div>
+
+          <!-- File Upload -->
+          <div class="option-group file-upload-group-wrap">
+            <label>Upload Certificate:</label>
+            <div class="upload-area" id="uploadArea">
+              <input
+                type="file"
+                id="fileInput"
+                accept="image/*,.pdf"
+                hidden>
+              <div class="upload-placeholder">
+                <img
+                  src="{{ "upload-icon.svg" |  asset_url }}"
+                  alt=""
+                  width="60"
+                  height="60">
+                <p>Drag & drop or
+                  <span class="browse-link">select a file</span>
+                </p>
+                <div class="input-link-container-and-upload-button">
+                  <div class="input-link-wrap">
+                    <input
+                      type="url"
+                      name=""
+                      id="">
+                    <button>{% render 'angle-arrow' %}</button>
+                  </div>
+                  <button>Upload</button>
+                </div>
+                <small>Upload your certificate (PDF, JPG, PNG, max 10 MB, min 150 DPI) by dragging it here or clicking to select from your device.</small>
+              </div>
+             <div
+                      class="file-info"
+                      id="fileInfo"
+                      style="display:none;">
+                      <span class="file-name"></span>
+                      <button type="button" class="remove-file">×</button>
+            </div>
+            </div>
+            <p class="security-note">🔒 Your certificate is securely handled</p>
+          </div>
+
+          <!-- Add to Cart Button -->
+          <button
+            type="button"
+            class="add-to-cart-btn"
+            id="addToCartBtn"
+            disabled>
+            Add to cart
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -729,6 +826,65 @@
       if (uploadPreview) uploadPreview.style.display = 'none';
     }
   });
+</script>
+<script>
+  // ====== Certificate Link Upload Function ======
+  const inputLinkWrap = document.querySelector('.input-link-wrap');
+  if (inputLinkWrap) {
+    const linkInput = inputLinkWrap.querySelector('input[type="url"]');
+    const linkButton = inputLinkWrap.querySelector('button');
+    const uploadedImage = document.getElementById('uploadedImage');
+    const fileInfo = document.getElementById('fileInfo');
+
+    linkButton.addEventListener('click', function (e) {
+      e.preventDefault();
+      const url = linkInput.value.trim();
+
+      if (!url) {
+        alert('Please enter a valid certificate link.');
+        return;
+      }
+
+      // Basic URL validation
+      try {
+        new URL(url);
+      } catch {
+        alert('Invalid URL format.');
+        return;
+      }
+
+      // Show preview if image link
+      if (uploadedImage) {
+        uploadedImage.src = url;
+      }
+
+      // Update file info UI
+      if (fileInfo) {
+        fileInfo.style.display = 'flex';
+        const fileNameSpan = fileInfo.querySelector('.file-name');
+        if (fileNameSpan) {
+          fileNameSpan.textContent = url.split('/').pop();
+        }
+      }
+
+      // Enable Add to Cart button after valid link
+      const addToCartBtn = document.getElementById('addToCartBtn');
+      if (addToCartBtn) addToCartBtn.disabled = false;
+
+      // Optional: feedback
+      linkButton.textContent = '✓ Linked';
+      setTimeout(() => (linkButton.textContent = 'arrow'), 1500);
+    });
+  }
+</script>
+<script>
+  // ===== Prevent popup trigger when clicking inside link input area =====
+  const linkInputWrap = document.querySelector('.input-link-wrap');
+  if (linkInputWrap) {
+    linkInputWrap.addEventListener('click', function(e) {
+      e.stopPropagation(); // ✅ stop the click from bubbling to uploadArea
+    });
+  }
 </script>
 
 {% render 'print_frames_js' %}
