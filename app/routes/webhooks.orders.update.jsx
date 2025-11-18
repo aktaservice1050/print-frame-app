@@ -120,6 +120,6 @@ export const action = async ({ request }) => {
 export const loader = async () => {
   return json({
     message: "Webhook endpoint working",
-    endpoint: "/webhooks/orders/create",
+    endpoint: "/webhooks/orders/shipment",
   });
 };
