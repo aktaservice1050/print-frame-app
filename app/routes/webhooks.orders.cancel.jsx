@@ -1,9 +1,9 @@
 /* eslint-disable no-undef */
-
+// File: app/routes/webhooks.orders.cancel.jsx
 import { json } from "@remix-run/node";
 
 export const action = async ({ request }) => {
-  console.log("\n========== WEBHOOK RECEIVED ==========");
+  console.log("\n========== ORDER CANCELLATION WEBHOOK ==========");
   console.log("⏰ Time:", new Date().toLocaleString("bn-BD"));
 
   try {
@@ -11,23 +11,28 @@ export const action = async ({ request }) => {
 
     const orderId = body.id;
     const orderNumber = body.order_number;
+    const cancelledAt = body.cancelled_at;
+    const cancelReason = body.cancel_reason;
     const customerEmail = body.email;
     const totalPrice = body.total_price;
     const lineItems = body.line_items || [];
+    const financialStatus = body.financial_status;
+    const fulfillmentStatus = body.fulfillment_status;
 
-    console.log("\n📋 ORDER SUMMARY:");
+    console.log("\n📋 CANCELLATION SUMMARY:");
     console.log(`🆔 Order ID: ${orderId}`);
     console.log(`🔢 Order Number: #${orderNumber}`);
     console.log(`👤 Customer: ${customerEmail}`);
     console.log(`💰 Total: ${totalPrice}`);
+    console.log(`❌ Cancel Reason: ${cancelReason || "Not specified"}`);
+    console.log(`💳 Financial Status: ${financialStatus}`);
+    console.log(`📦 Fulfillment Status: ${fulfillmentStatus}`);
     console.log(`📦 Items: ${lineItems.length}`);
 
-    // Partner Connect API Call
-    console.log("\n🚀 Sending to Partner Connect API...");
+    // Partner Connect API - Cancel Order
+    console.log("\n🚫 Cancelling order in Partner Connect API...");
 
-    const partnerApiUrl =
-      "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
-
+    const partnerApiUrl = `https://api.partner-connect.io/api/hud/order/6eb5f69f-9d04-4662-859b-0ad826660d5b/${orderNumber}/cancel`;
     // Valid currency mapping
     const currencyMap = {
       BDT: "USD",
@@ -38,7 +43,6 @@ export const action = async ({ request }) => {
 
     const rawCurrency = body.currency || "USD";
     const validCurrency = currencyMap[rawCurrency] || rawCurrency;
-
     const partnerPayload = {
       orderType: "order",
       orderReferenceId: orderNumber,
@@ -165,21 +169,7 @@ export const action = async ({ request }) => {
             phone: body.shipping_address.phone || body.customer?.phone || "",
           }
         : null,
-      // returnAddress: {
-      //   companyName: process.env.RETURN_COMPANY_NAME || "myStore",
-      //   addressLine1: process.env.RETURN_ADDRESS_LINE1 || "PO BOX 2345",
-      //   addressLine2: process.env.RETURN_ADDRESS_LINE2 || "",
-      //   state: process.env.RETURN_STATE || "UT",
-      //   city: process.env.RETURN_CITY || "Salt Lake City",
-      //   postCode: process.env.RETURN_POSTCODE || "84088",
-      //   country: process.env.RETURN_COUNTRY || "US",
-      //   email: process.env.RETURN_EMAIL || "",
-      //   phone: process.env.RETURN_PHONE || "",
-      // },
     };
-
-    console.log("\n📤 Payload being sent:");
-    console.log(JSON.stringify(partnerPayload, null, 2));
 
     try {
       const partnerResponse = await fetch(partnerApiUrl, {
@@ -195,21 +185,26 @@ export const action = async ({ request }) => {
 
       if (partnerResponse.ok) {
         console.log(
-          "✅ Partner API Success added - Status:",
+          "✅ Partner API Cancellation Success - Status:",
           partnerResponse.status,
         );
-        console.log("Response:", JSON.stringify(partnerData, null, 2));
       } else {
-        console.error("❌ Partner API Error - Status:", partnerResponse.status);
+        console.error(
+          "❌ Partner API Cancellation Error - Status:",
+          partnerResponse.status,
+        );
         console.error("Response:", JSON.stringify(partnerData, null, 2));
       }
 
       return json(
         {
           success: true,
-          message: "Webhook received and sent to Partner API",
+          message:
+            "Order cancellation webhook received and sent to Partner API",
           orderId: orderId,
           orderNumber: orderNumber,
+          cancelledAt: cancelledAt,
+          cancelReason: cancelReason,
           partnerApiStatus: partnerResponse.status,
           partnerApiResponse: partnerData,
           timestamp: new Date().toISOString(),
@@ -220,14 +215,19 @@ export const action = async ({ request }) => {
         },
       );
     } catch (apiError) {
-      console.error("❌ Partner API Call Failed:", apiError.message);
+      console.error(
+        "❌ Partner API Cancellation Call Failed:",
+        apiError.message,
+      );
 
       return json(
         {
           success: true,
-          message: "Webhook received but Partner API call failed",
+          message:
+            "Order cancellation webhook received but Partner API call failed",
           orderId: orderId,
           orderNumber: orderNumber,
+          cancelReason: cancelReason,
           apiError: apiError.message,
           timestamp: new Date().toISOString(),
           processed: true,
@@ -238,7 +238,7 @@ export const action = async ({ request }) => {
       );
     }
   } catch (error) {
-    console.error("❌ WEBHOOK ERROR:", error.message);
+    console.error("❌ CANCELLATION WEBHOOK ERROR:", error.message);
 
     return json(
       {
@@ -256,10 +256,10 @@ export const action = async ({ request }) => {
 export const loader = async () => {
   return json(
     {
-      message: "✅ Webhook endpoint is working!",
-      endpoint: "/webhooks/orders/create",
+      message: "✅ Order cancellation webhook endpoint is working!",
+      endpoint: "/webhooks/orders/cancel",
       methods: ["POST"],
-      note: "This endpoint only accepts POST requests from Shopify",
+      note: "This endpoint only accepts POST requests from Shopify for order cancellations",
       timestamp: new Date().toISOString(),
     },
     {
