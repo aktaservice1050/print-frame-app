@@ -20,41 +20,41 @@ api_version = "2026-01"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-
   [[webhooks.subscriptions]]
   topics = [ "orders/create" ]
   uri = "/webhooks/orders/create"
 
-[[webhooks.subscriptions]]
+  [[webhooks.subscriptions]]
   topics = [ "orders/updated" ]
   uri = "/webhooks/orders/update"
-
 
   [[webhooks.subscriptions]]
   topics = [ "fulfillments/create" ]
   uri = "/webhooks/orders/shipment"
 
-
   [[webhooks.subscriptions]]
   topics = [ "fulfillments/update" ]
   uri = "/webhooks/orders/shipment"
-
 
   [[webhooks.subscriptions]]
   topics = [ "orders/cancelled" ]
   uri = "/webhooks/orders/cancel"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_orders,write_orders,read_fulfillments,write_fulfillments, read_customers "
+scopes = "write_products,read_orders,write_orders,read_fulfillments,write_fulfillments,read_customers,write_files,read_files"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://print-frame-app.onrender.com/auth/callback",
+  "https://print-frame-app.onrender.com/auth/shopify/callback",
+  "https://print-frame-app.onrender.com/api/auth"
+]
+
+# ✅ App Proxy configuration
 [app_proxy]
-url = "https://print-frame-app.onrender.com/"
+url = "https://print-frame-app.onrender.com"
 prefix = "apps"
 subpath = "upload-url"
-
 
 [pos]
 embedded = false
