@@ -287,6 +287,12 @@ export default function Index() {
 
   const itemsPerPage = 20;
 
+  // ✅ Add this iframe check here
+  useEffect(() => {
+    if (window.top === window.self) {
+      window.location.href = "/auth/login";
+    }
+  }, []);
   useEffect(() => {
     if (totalOrders > 0) {
       shopify.toast.show(`${totalOrders} orders loaded`);
