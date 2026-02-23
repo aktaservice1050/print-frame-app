@@ -2,7 +2,7 @@
 
 client_id = "8c9ba3eef78b23dd7472243bbdc8022b"
 name = "print-frams"
-application_url = "https://print-frame-app.onrender.com/app"
+application_url = "https://print-frame-app.onrender.com"
 embedded = true
 
 [build]
@@ -46,8 +46,7 @@ scopes = "write_products,read_orders,write_orders,read_fulfillments,write_fulfil
 [auth]
 redirect_urls = [
   "https://print-frame-app.onrender.com/auth/callback",
-  "https://print-frame-app.onrender.com/auth/shopify/callback",
-  "https://print-frame-app.onrender.com/api/auth"
+  "https://print-frame-app.onrender.com/auth/shopify/callback"
 ]
 
 # ✅ App Proxy configuration
