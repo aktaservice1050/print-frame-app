@@ -1,7 +1,7 @@
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useEffect, useState } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
@@ -288,28 +288,29 @@ export default function Index() {
   const itemsPerPage = 20;
 
   // ✅ Add this iframe check here
-  useEffect(() => {
-    if (window.top === window.self) {
-      window.location.href = "/auth/login";
-    }
-  }, []);
+  // useEffect(() => {
+  //   if (window.top === window.self) {
+  //     window.location.href = "/auth/login";
+  //   }
+  // }, []);
   useEffect(() => {
     if (totalOrders > 0) {
       shopify.toast.show(`${totalOrders} orders loaded`);
     }
   }, [totalOrders, shopify]);
-
+  const revalidator = useRevalidator();
   // Handle metafield update response
   useEffect(() => {
     if (fetcher.data?.success) {
       shopify.toast.show("Image updated successfully!");
       setEditModal({ open: false, order: null });
       // Revalidate page to get updated data
-      window.location.reload();
+
+      revalidator.revalidate();
     } else if (fetcher.data?.error) {
       shopify.toast.show(`Error: ${fetcher.data.error}`);
     }
-  }, [fetcher.data, shopify]);
+  }, [fetcher.data, revalidator, shopify]);
 
   // Filter orders based on search term
   const filteredOrders = orders.filter((order) => {
