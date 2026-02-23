@@ -10,16 +10,11 @@ import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
-
   const url = new URL(request.url);
-  const host = url.searchParams.get("host"); // ✅ must have
-  const shop = url.searchParams.get("shop"); // (optional but helpful)
-
   return {
     // eslint-disable-next-line no-undef
     apiKey: process.env.SHOPIFY_API_KEY || "",
-    host,
-    shop,
+    host: url.searchParams.get("host"),
   };
 };
 
