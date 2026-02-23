@@ -57,4 +57,4 @@ prefix = "apps"
 subpath = "upload-url"
 
 [pos]
-embedded = false
+embedded = true
