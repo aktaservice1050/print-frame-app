@@ -2,6 +2,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   Outlet,
+  redirect,
   useLoaderData,
   useLocation,
   useRouteError,
@@ -9,12 +10,20 @@ import {
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
   const url = new URL(request.url);
+  const host = url.searchParams.get("host");
+
+  // ✅ host missing → restart embedded auth flow
+  if (!host) {
+    return redirect(`/auth/login?${url.searchParams.toString()}`);
+  }
+
+  await authenticate.admin(request);
+
   return {
     // eslint-disable-next-line no-undef
     apiKey: process.env.SHOPIFY_API_KEY || "",
-    host: url.searchParams.get("host"),
+    host,
   };
 };
 
