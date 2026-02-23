@@ -1,24 +1,6 @@
-/* eslint-disable no-undef */
-/* eslint-disable no-unused-vars */
-import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import {
-  Links,
-  Meta,
-  Outlet,
-  Scripts,
-  ScrollRestoration,
-  useLoaderData,
-} from "react-router";
-
-export const loader = async ({ request }) => {
-  return {
-    apiKey: process.env.SHOPIFY_API_KEY || "",
-  };
-};
+import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 
 export default function App() {
-  const { apiKey } = useLoaderData();
-
   return (
     <html lang="en">
       <head>
@@ -33,9 +15,7 @@ export default function App() {
         <Links />
       </head>
       <body>
-        <AppProvider isEmbeddedApp apiKey={apiKey}>
-          <Outlet />
-        </AppProvider>
+        <Outlet />
         <ScrollRestoration />
         <Scripts />
       </body>
