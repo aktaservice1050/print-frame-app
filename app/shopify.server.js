@@ -15,7 +15,22 @@ const shopify = shopifyApp({
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
-  distribution: AppDistribution.AppStore,
+
+  // ✅ custom app distribution (no app bridge, no embedded auth)
+  distribution: AppDistribution.Custom,
+
+  // ✅ embedded cookie fix
+  auth: {
+    cookie: {
+      secure: true,
+      sameSite: "none",
+    },
+  },
+
+  // ✅ embedded auth improvements (new strategy)
+  future: {
+    unstable_newEmbeddedAuthStrategy: true,
+  },
 });
 
 export default shopify;
