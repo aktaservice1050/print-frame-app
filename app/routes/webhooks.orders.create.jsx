@@ -1,43 +1,51 @@
 /* eslint-disable no-undef */
+import prisma from "../db.server";
 
-import { json } from "@remix-run/node";
+const jsonResponse = (data, init = {}) =>
+  new Response(JSON.stringify(data), {
+    ...init,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...(init.headers || {}),
+    },
+  });
 
 export const action = async ({ request }) => {
-  console.log("\n========== WEBHOOK RECEIVED ==========");
-  console.log("⏰ Time:", new Date().toLocaleString("bn-BD"));
-
   try {
-    const body = await request.json();
+    // ---- Robust body parsing (works even if body isn't valid JSON) ----
+    let body;
+    const contentType = request.headers.get("content-type") || "";
 
-    const orderId = body.id;
-    const orderNumber = body.order_number;
-    const customerEmail = body.email;
-    const totalPrice = body.total_price;
-    const lineItems = body.line_items || [];
+    if (contentType.includes("application/json")) {
+      body = await request.json().catch(() => null);
+    } else {
+      const text = await request.text();
+      body = text ? JSON.parse(text) : null;
+    }
 
-    console.log("\n📋 ORDER SUMMARY:");
-    console.log(`🆔 Order ID: ${orderId}`);
-    console.log(`🔢 Order Number: #${orderNumber}`);
-    console.log(`👤 Customer: ${customerEmail}`);
-    console.log(`💰 Total: ${totalPrice}`);
-    console.log(`📦 Items: ${lineItems.length}`);
+    if (!body || typeof body !== "object") {
+      return jsonResponse(
+        { success: false, error: "Invalid webhook payload" },
+        { status: 400 },
+      );
+    }
 
-    // Partner Connect API Call
-    console.log("\n🚀 Sending to Partner Connect API...");
+    const orderId = String(body.id || "");
+    const orderNumber = String(body.order_number || "");
+    const customerEmail = body.email || null;
 
-    const partnerApiUrl =
-      "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
+    if (!orderId || !orderNumber) {
+      return jsonResponse(
+        { success: false, error: "Missing order id/order_number" },
+        { status: 400 },
+      );
+    }
 
-    // Valid currency mapping
-    const currencyMap = {
-      BDT: "USD",
-      INR: "USD",
-      PKR: "USD",
-      // Add other currencies that need mapping
-    };
-
+    const currencyMap = { BDT: "USD", INR: "USD", PKR: "USD" };
     const rawCurrency = body.currency || "USD";
     const validCurrency = currencyMap[rawCurrency] || rawCurrency;
+
+    const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     const partnerPayload = {
       orderType: "order",
@@ -55,74 +63,77 @@ export const action = async ({ request }) => {
           printType: "4×0",
         };
 
-        if (item.properties && item.properties.length > 0) {
+        if (Array.isArray(item.properties) && item.properties.length) {
           item.properties.forEach((prop) => {
-            const key = prop.name.toLowerCase();
-            if (key.includes("paper")) frameProperties.paper = prop.value;
-            if (key.includes("orientation"))
-              frameProperties.orientation = prop.value;
+            const key = String(prop?.name || "").toLowerCase();
+            const val = prop?.value;
+
+            if (key.includes("paper")) frameProperties.paper = val;
+            if (key.includes("orientation")) frameProperties.orientation = val;
             if (key.includes("frame") && key.includes("type"))
-              frameProperties.frameType = prop.value;
+              frameProperties.frameType = val;
             if (key.includes("frame") && key.includes("color"))
-              frameProperties.frameColor = prop.value;
-            if (key.includes("matte")) frameProperties.matteType = prop.value;
-            if (key.includes("print")) frameProperties.printType = prop.value;
+              frameProperties.frameColor = val;
+            if (key.includes("matte")) frameProperties.matteType = val;
+            if (key.includes("print")) frameProperties.printType = val;
           });
         }
 
-        // Extract and validate file URLs
         const fileProperties =
-          item.properties?.filter(
-            (prop) =>
-              prop.name.toLowerCase().includes("file") ||
-              prop.name.toLowerCase().includes("certificate"),
-          ) || [];
+          (Array.isArray(item.properties)
+            ? item.properties.filter((prop) => {
+                const name = String(prop?.name || "").toLowerCase();
+                return name.includes("file") || name.includes("certificate");
+              })
+            : []) || [];
 
-        // Create unique file types and validate URLs
         const uniqueFiles = [];
         const seenTypes = new Set();
 
         fileProperties.forEach((prop) => {
-          const url = prop.value;
+          const url = String(prop?.value || "");
 
-          // Validate URL
           const isValidUrl =
             url &&
             (url.startsWith("http://") ||
               url.startsWith("https://") ||
-              url.startsWith("//")); // Protocol-relative URLs
+              url.startsWith("//"));
 
-          if (isValidUrl) {
-            // Ensure URL has protocol
-            const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
+          if (!isValidUrl) return;
 
-            // Create unique type names
-            let fileType = prop.name.toLowerCase().includes("certificate")
-              ? "certificate"
-              : "default";
+          const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
 
-            // Make type unique if already seen
-            let counter = 1;
-            let uniqueType = fileType;
-            while (seenTypes.has(uniqueType)) {
-              uniqueType = `${fileType}_${counter}`;
-              counter++;
-            }
+          const baseType = String(prop?.name || "")
+            .toLowerCase()
+            .includes("certificate")
+            ? "certificate"
+            : "default";
 
-            seenTypes.add(uniqueType);
-            uniqueFiles.push({
-              type: uniqueType,
-              url: normalizedUrl,
-            });
-          } else {
-            console.warn(`⚠️ Skipping invalid URL: ${url}`);
-          }
+          let counter = 1;
+          let uniqueType = baseType;
+          while (seenTypes.has(uniqueType))
+            uniqueType = `${baseType}_${counter++}`;
+
+          seenTypes.add(uniqueType);
+          uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
         });
+
+        const metadata =
+          (Array.isArray(item.properties)
+            ? item.properties
+                .filter((prop) => {
+                  const name = String(prop?.name || "").toLowerCase();
+                  return (
+                    !name.includes("file") && !name.includes("certificate")
+                  );
+                })
+                .map((prop) => ({ key: prop?.name, value: prop?.value }))
+            : []) || [];
 
         return {
           itemReferenceId:
-            item.variant_id?.toString() || item.product_id?.toString(),
-          productName: item.title || item.name,
+            item.variant_id?.toString() || item.product_id?.toString() || "",
+          productName: item.title || item.name || "",
           productVariant: {
             paper: frameProperties.paper,
             orientation: frameProperties.orientation,
@@ -132,18 +143,8 @@ export const action = async ({ request }) => {
             print_type: frameProperties.printType,
           },
           files: uniqueFiles,
-          quantity: item.quantity,
-          metadata:
-            item.properties
-              ?.filter(
-                (prop) =>
-                  !prop.name.toLowerCase().includes("file") &&
-                  !prop.name.toLowerCase().includes("certificate"),
-              )
-              .map((prop) => ({
-                key: prop.name,
-                value: prop.value,
-              })) || [],
+          quantity: item.quantity || 1,
+          metadata,
         };
       }),
       shipmentMethodId: "usps_ground_advantage",
@@ -165,105 +166,42 @@ export const action = async ({ request }) => {
             phone: body.shipping_address.phone || body.customer?.phone || "",
           }
         : null,
-      // returnAddress: {
-      //   companyName: process.env.RETURN_COMPANY_NAME || "myStore",
-      //   addressLine1: process.env.RETURN_ADDRESS_LINE1 || "PO BOX 2345",
-      //   addressLine2: process.env.RETURN_ADDRESS_LINE2 || "",
-      //   state: process.env.RETURN_STATE || "UT",
-      //   city: process.env.RETURN_CITY || "Salt Lake City",
-      //   postCode: process.env.RETURN_POSTCODE || "84088",
-      //   country: process.env.RETURN_COUNTRY || "US",
-      //   email: process.env.RETURN_EMAIL || "",
-      //   phone: process.env.RETURN_PHONE || "",
-      // },
     };
 
-    console.log("\n📤 Payload being sent:");
-    console.log(JSON.stringify(partnerPayload, null, 2));
-
-    try {
-      const partnerResponse = await fetch(partnerApiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6",
-        },
-        body: JSON.stringify(partnerPayload),
-      });
-
-      const partnerData = await partnerResponse.json();
-
-      if (partnerResponse.ok) {
-        console.log(
-          "✅ Partner API Success added - Status:",
-          partnerResponse.status,
-        );
-        console.log("Response:", JSON.stringify(partnerData, null, 2));
-      } else {
-        console.error("❌ Partner API Error - Status:", partnerResponse.status);
-        console.error("Response:", JSON.stringify(partnerData, null, 2));
-      }
-
-      return json(
-        {
-          success: true,
-          message: "Webhook received and sent to Partner API",
-          orderId: orderId,
-          orderNumber: orderNumber,
-          partnerApiStatus: partnerResponse.status,
-          partnerApiResponse: partnerData,
-          timestamp: new Date().toISOString(),
-          processed: true,
-        },
-        {
-          status: 200,
-        },
-      );
-    } catch (apiError) {
-      console.error("❌ Partner API Call Failed:", apiError.message);
-
-      return json(
-        {
-          success: true,
-          message: "Webhook received but Partner API call failed",
-          orderId: orderId,
-          orderNumber: orderNumber,
-          apiError: apiError.message,
-          timestamp: new Date().toISOString(),
-          processed: true,
-        },
-        {
-          status: 200,
-        },
-      );
-    }
-  } catch (error) {
-    console.error("❌ WEBHOOK ERROR:", error.message);
-
-    return json(
-      {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString(),
+    await prisma.orderQueue.upsert({
+      where: { shopifyOrderId: orderId },
+      update: {
+        orderNumber,
+        customerEmail,
+        rawCurrency,
+        partnerPayload,
+        status: "pending",
       },
-      {
-        status: 500,
+      create: {
+        shopifyOrderId: orderId,
+        orderNumber,
+        customerEmail,
+        rawCurrency,
+        partnerPayload,
+        status: "pending",
       },
+    });
+
+    // Shopify expects 200 quickly
+    return jsonResponse(
+      { success: true, message: "Saved to queue", orderId, orderNumber },
+      { status: 200 },
     );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ success: false, error: message }, { status: 500 });
   }
 };
 
-export const loader = async () => {
-  return json(
-    {
-      message: "✅ Webhook endpoint is working!",
-      endpoint: "/webhooks/orders/create",
-      methods: ["POST"],
-      note: "This endpoint only accepts POST requests from Shopify",
-      timestamp: new Date().toISOString(),
-    },
-    {
-      status: 200,
-    },
-  );
-};
+export const loader = async () =>
+  jsonResponse({
+    message: "✅ Webhook endpoint is working!",
+    endpoint: "/webhooks/orders/create",
+    methods: ["POST"],
+    timestamp: new Date().toISOString(),
+  });

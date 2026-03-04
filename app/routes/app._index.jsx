@@ -1,7 +1,11 @@
+/* eslint-disable jsx-a11y/no-noninteractive-element-interactions */
+/* eslint-disable jsx-a11y/click-events-have-key-events */
+/* eslint-disable jsx-a11y/no-static-element-interactions */
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
@@ -175,9 +179,14 @@ export const loader = async ({ request }) => {
       hasNextPage = false;
     }
   }
+  const dbOrders = await prisma.orderQueue.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  });
 
   return {
     orders,
+    dbOrders,
     totalOrders: orders.length,
     shop: session.shop,
     accessToken: session.accessToken,
@@ -274,7 +283,7 @@ const getImageUrl = (order) => {
 };
 
 export default function Index() {
-  const { orders, totalOrders, shop } = useLoaderData();
+  const { orders, totalOrders, shop, dbOrders } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
 
@@ -573,7 +582,9 @@ export default function Index() {
       backgroundColor: "#f5f5f5",
     },
   };
-
+  console.log("✅ [SERVER] DB(orderQueue) orders count:", dbOrders.length);
+  console.log("✅ [SERVER] DB(orderQueue) orders data:", dbOrders);
+  // console.log("data", paginatedOrders);s
   return (
     <div style={styles.container}>
       {/* Header */}

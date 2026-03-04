@@ -1,23 +1,17 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
-  id            String    @id
+  id            String   @id
   shop          String
   state         String
-  isOnline      Boolean   @default(false)
+  isOnline      Boolean  @default(false)
   scope         String?
   expires       DateTime?
   accessToken   String
@@ -25,8 +19,29 @@ model Session {
   firstName     String?
   lastName      String?
   email         String?
-  accountOwner  Boolean   @default(false)
+  accountOwner  Boolean?
   locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  collaborator  Boolean?
+  emailVerified Boolean?
+}
+
+model OrderQueue {
+  id                 String   @id @default(cuid())
+
+  shopifyOrderId      String   @unique
+  orderNumber         String
+  customerEmail       String?
+  rawCurrency         String?
+
+  status              String   @default("pending") // pending | editable | sent | failed
+  needsEdit           Boolean  @default(false)
+  partnerPayload      Json
+  partnerApiStatus    Int?
+  partnerApiResponse  Json?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status])
+  @@index([orderNumber])
 }
