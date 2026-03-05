@@ -3,191 +3,194 @@
 /* eslint-disable jsx-a11y/no-static-element-interactions */
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
-export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+/**
+ * ✅ Convert stored DB id into Shopify GID if needed
+ * - If already gid://shopify/Order/... return as-is
+ * - If numeric/string numeric => convert to gid
+ */
+const toOrderGid = (id) => {
+  if (!id) return null;
+  const str = String(id);
+  if (str.startsWith("gid://shopify/Order/")) return str;
+  // numeric id => gid
+  if (/^\d+$/.test(str)) return `gid://shopify/Order/${str}`;
+  // fallback: if it's something else, return as-is (maybe already gid)
+  return str;
+};
 
-  const orders = [];
-  let hasNextPage = true;
-  let endCursor = null;
+/**
+ * ✅ Fetch ONLY the orders that are in DB (orderQueue) using nodes(ids)
+ * nodes query supports up to 250 ids per call, so chunk it.
+ */
+const fetchOrdersByIds = async (admin, orderGids) => {
+  const chunkSize = 200; // safe
+  const chunks = [];
+  for (let i = 0; i < orderGids.length; i += chunkSize) {
+    chunks.push(orderGids.slice(i, i + chunkSize));
+  }
 
-  while (hasNextPage) {
+  const all = [];
+
+  for (const ids of chunks) {
     const response = await admin.graphql(
       `#graphql
-        query getOrders($cursor: String) {
-          orders(first: 250, after: $cursor) {
-            edges {
-              node {
-                id
-                name
-                email
-                createdAt
-                displayFinancialStatus
-                displayFulfillmentStatus
-                totalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                subtotalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalDiscountsSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalShippingPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalTaxSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                customer {
+      query getOrdersByIds($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Order {
+            id
+            name
+            email
+            createdAt
+            displayFinancialStatus
+            displayFulfillmentStatus
+            totalPriceSet {
+              shopMoney { amount currencyCode }
+            }
+            subtotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
+            totalDiscountsSet {
+              shopMoney { amount currencyCode }
+            }
+            totalShippingPriceSet {
+              shopMoney { amount currencyCode }
+            }
+            totalTaxSet {
+              shopMoney { amount currencyCode }
+            }
+            customer {
+              id
+              firstName
+              lastName
+              email
+              phone
+            }
+            shippingAddress {
+              firstName
+              lastName
+              address1
+              address2
+              city
+              province
+              country
+              zip
+              phone
+            }
+            billingAddress {
+              firstName
+              lastName
+              address1
+              address2
+              city
+              province
+              country
+              zip
+              phone
+            }
+            lineItems(first: 250) {
+              edges {
+                node {
                   id
-                  firstName
-                  lastName
-                  email
-                  phone
-                }
-                shippingAddress {
-                  firstName
-                  lastName
-                  address1
-                  address2
-                  city
-                  province
-                  country
-                  zip
-                  phone
-                }
-                billingAddress {
-                  firstName
-                  lastName
-                  address1
-                  address2
-                  city
-                  province
-                  country
-                  zip
-                  phone
-                }
-                lineItems(first: 250) {
-                  edges {
-                    node {
-                      id
-                      title
-                      quantity
-                      originalUnitPriceSet {
-                        shopMoney {
-                          amount
-                          currencyCode
-                        }
-                      }
-                      discountedUnitPriceSet {
-                        shopMoney {
-                          amount
-                          currencyCode
-                        }
-                      }
-                      variant {
-                        id
-                        title
-                        sku
-                        price
-                      }
-                      product {
-                        id
-                        title
-                        handle
-                      }
-                      customAttributes {
-                        key
-                        value
-                      }
-                    }
+                  title
+                  quantity
+                  originalUnitPriceSet {
+                    shopMoney { amount currencyCode }
                   }
-                }
-                customAttributes {
-                  key
-                  value
-                }
-                metafields(first: 10) {
-                  edges {
-                    node {
-                      id
-                      namespace
-                      key
-                      value
-                    }
+                  discountedUnitPriceSet {
+                    shopMoney { amount currencyCode }
                   }
-                }
-                note
-                tags
-                cancelledAt
-                cancelReason
-                fulfillments {
-                  id
-                  status
-                  createdAt
-                  trackingInfo {
-                    number
-                    url
-                    company
-                  }
-                }
-                transactions {
-                  id
-                  kind
-                  status
-                  amount
-                  gateway
+                  variant { id title sku price }
+                  product { id title handle }
+                  customAttributes { key value }
                 }
               }
             }
-            pageInfo {
-              hasNextPage
-              endCursor
+            customAttributes { key value }
+            metafields(first: 10) {
+              edges {
+                node {
+                  id
+                  namespace
+                  key
+                  value
+                }
+              }
+            }
+            note
+            tags
+            cancelledAt
+            cancelReason
+            fulfillments {
+              id
+              status
+              createdAt
+              trackingInfo { number url company }
+            }
+            transactions {
+              id
+              kind
+              status
+              amount
+              gateway
             }
           }
-        }`,
-      { variables: { cursor: endCursor } },
+        }
+      }`,
+      { variables: { ids } },
     );
 
-    const responseJson = await response.json();
-
-    if (responseJson.data?.orders) {
-      orders.push(...responseJson.data.orders.edges.map((edge) => edge.node));
-      hasNextPage = responseJson.data.orders.pageInfo.hasNextPage;
-      endCursor = responseJson.data.orders.pageInfo.endCursor;
-    } else {
-      hasNextPage = false;
-    }
+    const json = await response.json();
+    const nodes = json?.data?.nodes || [];
+    // nodes may contain null if not found / no access
+    all.push(...nodes.filter(Boolean));
   }
+
+  return all;
+};
+
+export const loader = async ({ request }) => {
+  const { admin, session } = await authenticate.admin(request);
+
+  // ✅ 1) ONLY DB orders
   const dbOrders = await prisma.orderQueue.findMany({
     orderBy: { createdAt: "desc" },
     take: 500,
   });
 
+  // ✅ 2) Build ids for Shopify fetch (ONLY those in DB)
+  const orderGids = dbOrders
+    .map((o) => toOrderGid(o.shopifyOrderId))
+    .filter(Boolean);
+
+  // If DB empty, return empty list
+  if (orderGids.length === 0) {
+    return {
+      orders: [],
+      dbOrders,
+      totalOrders: 0,
+      shop: session.shop,
+      accessToken: session.accessToken,
+    };
+  }
+
+  // ✅ 3) Fetch only those orders from Shopify
+  const orders = await fetchOrdersByIds(admin, orderGids);
+
+  // ✅ Optional: keep same order as DB (latest first)
+  const orderMap = new Map(orders.map((o) => [o.id, o]));
+  const orderedOrders = orderGids
+    .map((gid) => orderMap.get(gid))
+    .filter(Boolean);
+
   return {
-    orders,
+    orders: orderedOrders,
     dbOrders,
-    totalOrders: orders.length,
+    totalOrders: orderedOrders.length,
     shop: session.shop,
     accessToken: session.accessToken,
   };
@@ -212,19 +215,11 @@ export const action = async ({ request }) => {
                 id
                 metafields(first: 10) {
                   edges {
-                    node {
-                      id
-                      namespace
-                      key
-                      value
-                    }
+                    node { id namespace key value }
                   }
                 }
               }
-              userErrors {
-                field
-                message
-              }
+              userErrors { field message }
             }
           }`,
         {
@@ -302,34 +297,48 @@ export default function Index() {
       window.location.href = "/auth/login";
     }
   }, []);
+
   useEffect(() => {
     if (totalOrders > 0) {
-      shopify.toast.show(`${totalOrders} orders loaded`);
+      shopify.toast.show(`${totalOrders} DB orders loaded`);
     }
   }, [totalOrders, shopify]);
+
   const revalidator = useRevalidator();
+
   // Handle metafield update response
   useEffect(() => {
     if (fetcher.data?.success) {
       shopify.toast.show("Image updated successfully!");
       setEditModal({ open: false, order: null });
-      // Revalidate page to get updated data
-
       revalidator.revalidate();
     } else if (fetcher.data?.error) {
       shopify.toast.show(`Error: ${fetcher.data.error}`);
     }
   }, [fetcher.data, revalidator, shopify]);
 
+  // (Optional) Map DB orderQueue info by Shopify order id (for future use)
+  const dbByShopifyId = useMemo(() => {
+    const m = new Map();
+    for (const o of dbOrders || []) {
+      const gid = toOrderGid(o.shopifyOrderId);
+      if (gid) m.set(gid, o);
+    }
+    return m;
+  }, [dbOrders]);
+
   // Filter orders based on search term
   const filteredOrders = orders.filter((order) => {
     const search = searchTerm.toLowerCase();
+    const dbRow = dbByShopifyId.get(order.id); // ✅ DB data available if you want
+
     return (
       order.name?.toLowerCase().includes(search) ||
       order.email?.toLowerCase().includes(search) ||
       order.customer?.firstName?.toLowerCase().includes(search) ||
       order.customer?.lastName?.toLowerCase().includes(search) ||
-      order.shippingAddress?.city?.toLowerCase().includes(search)
+      order.shippingAddress?.city?.toLowerCase().includes(search) ||
+      dbRow?.orderNumber?.toLowerCase?.().includes?.(search) // fallback if you search by DB orderNumber
     );
   });
 
@@ -582,9 +591,7 @@ export default function Index() {
       backgroundColor: "#f5f5f5",
     },
   };
-  console.log("✅ [SERVER] DB(orderQueue) orders count:", dbOrders.length);
-  console.log("✅ [SERVER] DB(orderQueue) orders data:", dbOrders);
-  // console.log("data", paginatedOrders);s
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -610,9 +617,7 @@ export default function Index() {
               {[
                 "Image",
                 "Order",
-
                 "Customer",
-
                 "Items",
                 "Total",
                 "Payment",
@@ -629,7 +634,7 @@ export default function Index() {
               const imageData = getImageUrl(order);
               const displayUrl = localImages[order.id] || imageData.url;
               const isUpdated = localImages[order.id] || imageData.isUpdated;
-
+              console.log("data");
               return (
                 <tr
                   key={order.id}
@@ -654,13 +659,13 @@ export default function Index() {
                               e.target.style.display = "none";
                             }}
                           />
-                          <button
+                          {/* <button
                             style={styles.editBtn}
                             onClick={() => setEditModal({ open: true, order })}
                             title="Edit Image"
                           >
                             ✎
-                          </button>
+                          </button> */}
                         </>
                       ) : (
                         <div
@@ -672,6 +677,7 @@ export default function Index() {
                       )}
                     </div>
                   </td>
+
                   {/* Order Info */}
                   <td style={styles.td}>
                     <strong style={{ color: "#007bff" }}>{order.name}</strong>
@@ -680,10 +686,7 @@ export default function Index() {
                       {order.email || "N/A"}
                     </small>
                   </td>
-                  {/* Date */}
-                  {/* <td style={{ ...styles.td, fontSize: "13px" }}>
-                    {formatDate(order.createdAt)}
-                  </td> */}
+
                   {/* Customer */}
                   <td style={styles.td}>
                     <strong>
@@ -698,21 +701,7 @@ export default function Index() {
                         "N/A"}
                     </small>
                   </td>
-                  {/* Address */}
-                  {/* <td style={{ ...styles.td, fontSize: "13px" }}>
-                    {order.shippingAddress ? (
-                      <>
-                        {order.shippingAddress.address1}
-                        <br />
-                        <small style={{ color: "#6c757d" }}>
-                          {order.shippingAddress.city},{" "}
-                          {order.shippingAddress.country}
-                        </small>
-                      </>
-                    ) : (
-                      "N/A"
-                    )}
-                  </td> */}
+
                   {/* Items */}
                   <td style={styles.td}>
                     {order.lineItems.edges.slice(0, 2).map((item, i) => (
@@ -729,6 +718,7 @@ export default function Index() {
                       </small>
                     )}
                   </td>
+
                   {/* Total */}
                   <td style={styles.td}>
                     <strong>
@@ -738,10 +728,12 @@ export default function Index() {
                       )}
                     </strong>
                   </td>
+
                   {/* Payment Status */}
                   <td style={styles.td}>
                     {getStatusBadge(order.displayFinancialStatus)}
                   </td>
+
                   {/* Delivery Status */}
                   <td style={styles.td}>
                     {getStatusBadge(order.displayFulfillmentStatus)}
