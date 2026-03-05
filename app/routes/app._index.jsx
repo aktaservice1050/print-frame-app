@@ -659,13 +659,13 @@ export default function Index() {
                               e.target.style.display = "none";
                             }}
                           />
-                          {/* <button
+                          <button
                             style={styles.editBtn}
                             onClick={() => setEditModal({ open: true, order })}
                             title="Edit Image"
                           >
                             ✎
-                          </button> */}
+                          </button>
                         </>
                       ) : (
                         <div
