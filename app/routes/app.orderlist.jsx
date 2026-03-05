@@ -795,6 +795,7 @@ export default function OrderReviewSinglePage() {
               <tbody>
                 {(orders || [])
                   .filter((o) => o.imageEditable !== "not_editable")
+                  .filter((o) => o.partnerStatus !== "sent")
                   .map((o, idx) => {
                     const type =
                       o.imageEditable === "not_editable"

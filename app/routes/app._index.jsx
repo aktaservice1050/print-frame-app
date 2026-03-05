@@ -127,7 +127,7 @@ export const loader = async ({ request }) => {
                   key
                   value
                 }
-                metafields(first: 10) {
+                metafields(first: 20) {
                   edges {
                     node {
                       id
@@ -258,6 +258,20 @@ export const action = async ({ request }) => {
   return null;
 };
 
+const getMetafieldValue = (order, namespace, key) => {
+  const found = order.metafields?.edges?.find(
+    (edge) => edge.node.namespace === namespace && edge.node.key === key,
+  );
+
+  return found?.node?.value || null;
+};
+
+const getPartnerStatus = (order) =>
+  getMetafieldValue(order, "custom", "partner_status");
+
+const getPartnerApiStatus = (order) =>
+  getMetafieldValue(order, "custom", "partner_api_status");
+
 // Get image URL from metafield or custom attributes
 const getImageUrl = (order) => {
   const metafieldImage = order.metafields?.edges?.find(
@@ -322,7 +336,9 @@ export default function Index() {
       order.email?.toLowerCase().includes(search) ||
       order.customer?.firstName?.toLowerCase().includes(search) ||
       order.customer?.lastName?.toLowerCase().includes(search) ||
-      order.shippingAddress?.city?.toLowerCase().includes(search)
+      order.shippingAddress?.city?.toLowerCase().includes(search) ||
+      getPartnerStatus(order)?.toLowerCase().includes(search) ||
+      getPartnerApiStatus(order)?.toLowerCase().includes(search)
     );
   });
 
@@ -414,6 +430,38 @@ export default function Index() {
     );
   };
 
+  const getPartnerBadge = (status) => {
+    const normalized = String(status || "").toLowerCase();
+
+    const stylesByStatus = {
+      sent: { bg: "#d4edda", color: "#155724" },
+      failed: { bg: "#f8d7da", color: "#721c24" },
+      editable: { bg: "#fff3cd", color: "#856404" },
+      edited: { bg: "#d1ecf1", color: "#0c5460" },
+    };
+
+    const style = stylesByStatus[normalized] || {
+      bg: "#e2e3e5",
+      color: "#383d41",
+    };
+
+    return (
+      <span
+        style={{
+          padding: "4px 8px",
+          borderRadius: "4px",
+          fontSize: "12px",
+          fontWeight: "600",
+          backgroundColor: style.bg,
+          color: style.color,
+          textTransform: "capitalize",
+        }}
+      >
+        {status || "N/A"}
+      </span>
+    );
+  };
+
   const styles = {
     container: { padding: "20px", fontFamily: "Arial, sans-serif" },
     header: {
@@ -441,6 +489,7 @@ export default function Index() {
       width: "100%",
       borderCollapse: "collapse",
       backgroundColor: "#fff",
+      minWidth: "1200px",
     },
     th: {
       padding: "12px",
@@ -448,8 +497,13 @@ export default function Index() {
       borderBottom: "2px solid #dee2e6",
       fontWeight: "600",
       fontSize: "13px",
+      whiteSpace: "nowrap",
     },
-    td: { padding: "12px", borderBottom: "1px solid #dee2e6" },
+    td: {
+      padding: "12px",
+      borderBottom: "1px solid #dee2e6",
+      verticalAlign: "top",
+    },
     imageContainer: { position: "relative", display: "inline-block" },
     thumbnail: {
       width: "60px",
@@ -554,6 +608,7 @@ export default function Index() {
       alignItems: "center",
       gap: "10px",
       marginTop: "20px",
+      flexWrap: "wrap",
     },
     pageBtn: {
       padding: "8px 16px",
@@ -599,6 +654,7 @@ export default function Index() {
                 "Customer",
                 "Items",
                 "Total",
+                "Partner",
                 "Payment",
                 "Delivery",
               ].map((h) => (
@@ -613,6 +669,8 @@ export default function Index() {
               const imageData = getImageUrl(order);
               const displayUrl = localImages[order.id] || imageData.url;
               const isUpdated = !!localImages[order.id] || imageData.isUpdated;
+              const partnerStatus = getPartnerStatus(order);
+              // const partnerApiStatus = getPartnerApiStatus(order);
 
               return (
                 <tr
@@ -702,6 +760,22 @@ export default function Index() {
                       )}
                     </strong>
                   </td>
+
+                  <td style={styles.td}>
+                    {partnerStatus ? (
+                      getPartnerBadge(partnerStatus)
+                    ) : (
+                      <span style={{ color: "#6c757d" }}>-</span>
+                    )}
+                  </td>
+
+                  {/* <td style={styles.td}>
+                    {partnerApiStatus ? (
+                      <strong>{partnerApiStatus}</strong>
+                    ) : (
+                      <span style={{ color: "#6c757d" }}>-</span>
+                    )}
+                  </td> */}
 
                   <td style={styles.td}>
                     {getStatusBadge(order.displayFinancialStatus)}
