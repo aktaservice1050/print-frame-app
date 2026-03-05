@@ -11,14 +11,9 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
-/**
- * ✅ Convert stored DB id into Shopify GID if needed
- * - If already gid://shopify/Order/... return as-is
- * - If numeric/string numeric => convert to gid
- */
+/** ✅ Convert id into Shopify GID if needed */
 const toOrderGid = (id) => {
   if (!id) return "";
   const str = String(id);
@@ -37,36 +32,295 @@ const jsonResponse = (data, init = {}) =>
     },
   });
 
+/** ✅ get customAttribute by key (label-based; matches your screenshot) */
+const getAttr = (customAttributes = [], key) => {
+  const k = String(key || "")
+    .trim()
+    .toLowerCase();
+  const found = (customAttributes || []).find(
+    (a) =>
+      String(a?.key || "")
+        .trim()
+        .toLowerCase() === k,
+  );
+  return found ? found.value : null;
+};
+
+/** ✅ "Image Editable" is the key in your customAttributes (screenshot) */
+const getImageEditableFromOrder = (order) => {
+  const edges = order?.lineItems?.edges || [];
+  for (const e of edges) {
+    const attrs = e?.node?.customAttributes || [];
+    const v =
+      getAttr(attrs, "Image Editable") ||
+      getAttr(attrs, "image_editable") ||
+      getAttr(attrs, "editable");
+    if (v) return String(v).trim().toLowerCase();
+  }
+  return null;
+};
+
+/** ✅ "File URL" is the key in your customAttributes (screenshot) */
+const getFirstFileUrlFromLineItem = (lineItemNode) => {
+  const attrs = lineItemNode?.customAttributes || [];
+  const v =
+    getAttr(attrs, "File URL") ||
+    getAttr(attrs, "file_url") ||
+    getAttr(attrs, "File Url") ||
+    null;
+  return v ? String(v).trim() : null;
+};
+
+const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
+  const orderNumber =
+    String(order?.name || "")
+      .replace("#", "")
+      .trim() || "";
+  const customerEmail = order?.email || order?.customer?.email || null;
+
+  const rawCurrency = order?.totalPriceSet?.shopMoney?.currencyCode || "USD";
+  const currencyMap = { BDT: "USD", INR: "USD", PKR: "USD" };
+  const validCurrency = currencyMap[rawCurrency] || rawCurrency;
+
+  const shipping = order?.shippingAddress || null;
+  const lineEdges = order?.lineItems?.edges || [];
+
+  return {
+    orderType: "order",
+    orderReferenceId: orderNumber || String(order?.id || ""),
+    customerReferenceId: "InkWorthy",
+    currency: validCurrency,
+    preventDuplicate: true,
+    items: lineEdges.map((edge) => {
+      const item = edge?.node || {};
+      const attrs = item.customAttributes || [];
+
+      let frameProperties = {
+        paper: "standard",
+        orientation: "portrait",
+        frameType: "classic",
+        frameColor: "wood grain",
+        matteType: "matting",
+        printType: "4×0",
+      };
+
+      (attrs || []).forEach((a) => {
+        const key = String(a?.key || "").toLowerCase();
+        const val = a?.value;
+
+        if (key.includes("paper")) frameProperties.paper = val;
+        if (key.includes("orientation")) frameProperties.orientation = val;
+        if (key.includes("frame") && key.includes("type"))
+          frameProperties.frameType = val;
+        if (key.includes("frame") && key.includes("style"))
+          frameProperties.frameColor = val;
+        if (key.includes("frame") && key.includes("color"))
+          frameProperties.frameColor = val;
+        if (key.includes("matte")) frameProperties.matteType = val;
+        if (key.includes("print")) frameProperties.printType = val;
+      });
+
+      const fileCandidates = (attrs || []).filter((a) => {
+        const k = String(a?.key || "").toLowerCase();
+        return k.includes("file url") || k.includes("certificate");
+      });
+
+      const uniqueFiles = [];
+      const seenTypes = new Set();
+
+      fileCandidates.forEach((a) => {
+        const url = String(a?.value || "");
+        const isValidUrl =
+          url &&
+          (url.startsWith("http://") ||
+            url.startsWith("https://") ||
+            url.startsWith("//"));
+        if (!isValidUrl) return;
+
+        const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
+
+        const baseType = String(a?.key || "")
+          .toLowerCase()
+          .includes("certificate")
+          ? "certificate"
+          : "default";
+
+        let counter = 1;
+        let uniqueType = baseType;
+        while (seenTypes.has(uniqueType))
+          uniqueType = `${baseType}_${counter++}`;
+
+        seenTypes.add(uniqueType);
+        uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
+      });
+
+      // ✅ override default file urls if edited image exists
+      if (updatedImageUrl) {
+        uniqueFiles.forEach((f) => {
+          const t = String(f.type || "").toLowerCase();
+          if (t.startsWith("default")) f.url = updatedImageUrl;
+        });
+      }
+
+      const metadata = (attrs || [])
+        .filter((a) => {
+          const k = String(a?.key || "").toLowerCase();
+          return !k.includes("file url") && !k.includes("certificate");
+        })
+        .map((a) => ({ key: a?.key, value: a?.value }));
+
+      return {
+        itemReferenceId:
+          item?.variant?.id?.toString() ||
+          item?.product?.id?.toString() ||
+          item?.id?.toString() ||
+          "",
+        productName: item.title || "",
+        productVariant: {
+          paper: frameProperties.paper,
+          orientation: frameProperties.orientation,
+          frameType: frameProperties.frameType,
+          frameColor: frameProperties.frameColor,
+          matteType: frameProperties.matteType,
+          print_type: frameProperties.printType,
+        },
+        files: uniqueFiles,
+        quantity: item.quantity || 1,
+        metadata,
+      };
+    }),
+    shipmentMethodId: "usps_ground_advantage",
+    shippingAddress: shipping
+      ? {
+          companyName: shipping.company || "",
+          firstName: shipping.firstName || "",
+          lastName: shipping.lastName || "",
+          addressLine1: shipping.address1 || "",
+          addressLine2: shipping.address2 || "",
+          city: shipping.city || "",
+          postcode: shipping.zip || "",
+          country: shipping.countryCodeV2 || "US",
+          email: customerEmail,
+          phone: shipping.phone || "",
+        }
+      : null,
+  };
+};
+
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   const url = new URL(request.url);
-  const orderId = url.searchParams.get("orderId");
+  const orderIdRaw = url.searchParams.get("orderId");
+  const orderId = orderIdRaw ? toOrderGid(orderIdRaw) : null;
 
-  const orders = await prisma.orderQueue.findMany({
-    where: {
-      status: { in: ["pending", "editable", "ready", "failed", "sent"] },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200,
+  const resp = await admin.graphql(
+    `#graphql
+    query OrdersForReview($first:Int!) {
+      orders(first: $first, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            email
+            createdAt
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress {
+              firstName lastName company address1 address2 city zip
+              countryCodeV2 phone
+            }
+            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+            partner_status: metafield(namespace: "custom", key: "partner_status") { value }
+            partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
+            lineItems(first: 25) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  product { id }
+                  variant { id }
+                  customAttributes { key value }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { first: 200 } },
+  );
+
+  const data = await resp.json();
+  const edges = data?.data?.orders?.edges || [];
+
+  const orders = edges.map((e) => {
+    const o = e.node;
+    const imageEditable = getImageEditableFromOrder(o);
+    return {
+      id: o.id,
+      name: o.name,
+      email: o.email,
+      createdAt: o.createdAt,
+      total: o.totalPriceSet?.shopMoney?.amount || null,
+      currency: o.totalPriceSet?.shopMoney?.currencyCode || null,
+      imageEditable,
+      partnerStatus: o?.partner_status?.value || null,
+      partnerApiStatus: o?.partner_api_status?.value || null,
+      updatedImage: o?.updated_image?.value || null,
+    };
   });
 
-  const selectedOrder = orderId
-    ? await prisma.orderQueue.findUnique({ where: { id: orderId } })
-    : null;
+  let selectedOrder = null;
+  if (orderId) {
+    const r2 = await admin.graphql(
+      `#graphql
+      query OrderById($id: ID!) {
+        order(id: $id) {
+          id
+          name
+          email
+          createdAt
+          totalPriceSet { shopMoney { amount currencyCode } }
+          shippingAddress {
+            firstName lastName company address1 address2 city zip
+            countryCodeV2 phone
+          }
+          updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+          partner_status: metafield(namespace: "custom", key: "partner_status") { value }
+          partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
+          partner_api_response: metafield(namespace: "custom", key: "partner_api_response") { value }
+          lineItems(first: 25) {
+            edges {
+              node {
+                id
+                title
+                quantity
+                product { id }
+                variant { id }
+                customAttributes { key value }
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { id: orderId } },
+    );
+
+    const j2 = await r2.json();
+    selectedOrder = j2?.data?.order || null;
+  }
 
   return { orders, selectedOrder, orderId, shop: session.shop };
 };
 
 export const action = async ({ request }) => {
   try {
+    const { admin } = await authenticate.admin(request);
     const form = await request.formData();
     const intent = String(form.get("_intent") || "");
 
-    // ✅ UPDATE SHOPIFY METAFIELD (this makes Home route sync)
     if (intent === "update_image_metafield") {
-      const { admin } = await authenticate.admin(request);
-
       const shopifyOrderIdRaw = String(form.get("shopifyOrderId") || "");
       const shopifyOrderId = toOrderGid(shopifyOrderIdRaw);
       const imageUrl = String(form.get("imageUrl") || "");
@@ -80,7 +334,7 @@ export const action = async ({ request }) => {
 
       const response = await admin.graphql(
         `#graphql
-        mutation updateOrderMetafield($input: OrderInput!) {
+        mutation updateOrderMetafields($input: OrderInput!) {
           orderUpdate(input: $input) {
             order { id }
             userErrors { field message }
@@ -96,6 +350,12 @@ export const action = async ({ request }) => {
                   key: "updated_image",
                   value: imageUrl,
                   type: "url",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_status",
+                  value: "edited",
+                  type: "single_line_text_field",
                 },
               ],
             },
@@ -115,125 +375,209 @@ export const action = async ({ request }) => {
       return jsonResponse({ ok: true, intent }, { status: 200 });
     }
 
-    // everything else needs prisma orderId
-    const orderId = String(form.get("orderId") || "");
-    if (!orderId)
-      return jsonResponse(
-        { ok: false, error: "Missing orderId" },
-        { status: 400 },
-      );
-
-    const order = await prisma.orderQueue.findUnique({
-      where: { id: orderId },
-    });
-    if (!order)
-      return jsonResponse(
-        { ok: false, error: "Order not found" },
-        { status: 404 },
-      );
-
-    if (intent === "set_needs_edit") {
-      const v = String(form.get("needsEdit") || "false") === "true";
-      const nextStatus = v ? "editable" : "pending";
-      await prisma.orderQueue.update({
-        where: { id: orderId },
-        data: { needsEdit: v, status: nextStatus },
-      });
-      return jsonResponse({ ok: true, intent }, { status: 200 });
-    }
-
-    if (intent === "save_editable") {
-      const payload = order.partnerPayload || {};
-      const items = payload.items || [];
-
-      items.forEach((it, idx) => {
-        const files = it.files || [];
-        files.forEach((f, fIdx) => {
-          const key = `fileUrl__${idx}__${fIdx}`;
-          const newUrl = form.get(key);
-          if (typeof newUrl === "string" && newUrl.trim())
-            f.url = newUrl.trim();
-        });
-      });
-
-      payload.items = items;
-
-      await prisma.orderQueue.update({
-        where: { id: orderId },
-        data: { partnerPayload: payload, status: "editable" },
-      });
-
-      return jsonResponse({ ok: true, intent }, { status: 200 });
-    }
-
-    if (intent === "update_status") {
-      const nextStatus = String(form.get("nextStatus") || "").trim();
-      const allowed = new Set([
-        "pending",
-        "editable",
-        "ready",
-        "sent",
-        "failed",
-      ]);
-      if (!allowed.has(nextStatus))
-        return jsonResponse(
-          { ok: false, error: "Invalid status" },
-          { status: 400 },
-        );
-
-      await prisma.orderQueue.update({
-        where: { id: orderId },
-        data: { status: nextStatus },
-      });
-      return jsonResponse({ ok: true, intent }, { status: 200 });
-    }
-
     if (intent === "send_partner") {
-      const needsEdit = !!order.needsEdit;
-      const canSend = !needsEdit || order.status === "ready";
-      if (!canSend) {
+      const orderIdRaw = String(form.get("orderId") || "");
+      const orderId = toOrderGid(orderIdRaw);
+
+      if (!orderId) {
         return jsonResponse(
-          { ok: false, error: "Editing required. Mark status as READY first." },
+          { ok: false, error: "Missing orderId" },
           { status: 400 },
         );
       }
 
+      const r = await admin.graphql(
+        `#graphql
+        query OrderForPartner($id: ID!) {
+          order(id: $id) {
+            id
+            name
+            email
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress {
+              firstName lastName company address1 address2 city zip
+              countryCodeV2 phone
+            }
+            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+            lineItems(first: 25) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  product { id }
+                  variant { id }
+                  customAttributes { key value }
+                }
+              }
+            }
+          }
+        }`,
+        { variables: { id: orderId } },
+      );
+
+      const j = await r.json();
+      const order = j?.data?.order;
+
+      if (!order) {
+        return jsonResponse(
+          { ok: false, error: "Order not found" },
+          { status: 404 },
+        );
+      }
+
+      const imageEditable = getImageEditableFromOrder(order);
+      if (imageEditable !== "editable") {
+        return jsonResponse(
+          {
+            ok: false,
+            error:
+              "This order is not editable (or missing “Image Editable”). It should be auto-sent by webhook.",
+          },
+          { status: 400 },
+        );
+      }
+
+      const updatedImageUrl = order?.updated_image?.value || null;
+      const partnerPayload = buildPartnerPayloadFromOrder(
+        order,
+        updatedImageUrl,
+      );
+
+      // ✅ hardcoded URL (your requirement)
       const partnerApiUrl =
         "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
 
-      const res = await fetch(partnerApiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": process.env.PARTNER_API_KEY,
-        },
-        body: JSON.stringify(order.partnerPayload),
-      });
+      const PARTNER_API_KEY =
+        "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
 
-      const data = await res.json().catch(() => ({}));
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 10000);
 
-      if (res.ok) {
-        await prisma.orderQueue.update({
-          where: { id: orderId },
-          data: {
-            status: "sent",
-            partnerApiStatus: res.status,
-            partnerApiResponse: data,
+      let res;
+      let text = "";
+      let parsed = null;
+
+      try {
+        res = await fetch(partnerApiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": PARTNER_API_KEY, // ✅ send header too
           },
+          body: JSON.stringify(partnerPayload),
+          signal: controller.signal,
         });
-        return jsonResponse({ ok: true, intent }, { status: 200 });
+
+        text = await res.text().catch(() => "");
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = null;
+        }
+      } catch (err) {
+        const msg =
+          err?.name === "AbortError"
+            ? "Partner request timeout"
+            : String(err?.message || err);
+
+        return jsonResponse(
+          {
+            ok: false,
+            error: msg,
+            debug: {
+              partnerApiUrl,
+              orderId,
+              orderName: order?.name,
+              updatedImageUrl,
+              payloadPreview: {
+                orderReferenceId: partnerPayload?.orderReferenceId,
+                items: partnerPayload?.items?.map((it) => ({
+                  productName: it.productName,
+                  quantity: it.quantity,
+                  files: it.files?.map((f) => ({ type: f.type, url: f.url })),
+                })),
+              },
+            },
+          },
+          { status: 400 },
+        );
+      } finally {
+        clearTimeout(t);
       }
 
-      await prisma.orderQueue.update({
-        where: { id: orderId },
-        data: {
-          status: "failed",
-          partnerApiStatus: res.status,
-          partnerApiResponse: data,
-        },
-      });
+      const statusValue = res.ok ? "sent" : "failed";
 
-      return jsonResponse({ ok: false, intent }, { status: 400 });
+      await admin.graphql(
+        `#graphql
+        mutation savePartnerMetafields($input: OrderInput!) {
+          orderUpdate(input: $input) {
+            order { id }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            input: {
+              id: orderId,
+              metafields: [
+                {
+                  namespace: "custom",
+                  key: "partner_status",
+                  value: statusValue,
+                  type: "single_line_text_field",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_api_status",
+                  value: String(res.status),
+                  type: "number_integer",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_api_response",
+                  value: text ? text.slice(0, 50000) : "",
+                  type: "json",
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      if (!res.ok) {
+        return jsonResponse(
+          {
+            ok: false,
+            error: `Partner API failed (${res.status})`,
+            partner: { status: res.status, body: parsed || text || null },
+            debug: {
+              partnerApiUrl,
+              orderId,
+              orderName: order?.name,
+              updatedImageUrl,
+              payloadPreview: {
+                orderReferenceId: partnerPayload?.orderReferenceId,
+                items: partnerPayload?.items?.map((it) => ({
+                  productName: it.productName,
+                  quantity: it.quantity,
+                  files: it.files?.map((f) => ({ type: f.type, url: f.url })),
+                })),
+              },
+            },
+          },
+          { status: 400 },
+        );
+      }
+
+      return jsonResponse(
+        {
+          ok: true,
+          message: "Sent to partner",
+          partner: { status: res.status, body: parsed || text || null },
+        },
+        { status: 200 },
+      );
     }
 
     return jsonResponse(
@@ -274,7 +618,6 @@ function UploadAndSaveImage({
       return;
     }
 
-    // ✅ Safety: need GID for metafield update
     if (!shopifyOrderId) {
       const msg = "Missing Shopify Order GID (gid://shopify/Order/...)";
       shopify.toast.show(msg);
@@ -300,7 +643,6 @@ function UploadAndSaveImage({
         const el = document.getElementById(inputId);
         if (el) el.value = result.fileUrl;
 
-        // ✅ Metafield update => HOME sync (same as Home route flow)
         const mf = new FormData();
         mf.append("_intent", "update_image_metafield");
         mf.append("shopifyOrderId", shopifyOrderId);
@@ -355,25 +697,6 @@ function UploadAndSaveImage({
   );
 }
 
-const getImageUrl = (order) => {
-  // First check metafield for updated image
-  const metafieldImage = order.metafields?.edges?.find(
-    (edge) =>
-      edge.node.namespace === "custom" && edge.node.key === "updated_image",
-  );
-  if (metafieldImage) {
-    return { url: metafieldImage.node.value, isUpdated: true };
-  }
-
-  // Fallback to original custom attribute
-  const firstLineItem = order.lineItems.edges[0]?.node;
-  const fileUrlAttr = firstLineItem?.customAttributes?.find(
-    (attr) => attr.key === "File URL" || attr.key === "_file_url",
-  );
-
-  return { url: fileUrlAttr?.value || null, isUpdated: false };
-};
-
 export default function OrderReviewSinglePage() {
   const { orders, selectedOrder, orderId, shop } = useLoaderData();
   const actionData = useActionData();
@@ -399,9 +722,9 @@ export default function OrderReviewSinglePage() {
     return () => clearTimeout(t);
   }, [uploadMsg, uploadErr]);
 
-  const selectOrder = (id) => {
+  const selectOrder = (gid) => {
     const next = new URLSearchParams(sp);
-    next.set("orderId", id);
+    next.set("orderId", gid);
     setSp(next);
     setUploadMsg("");
     setUploadErr("");
@@ -417,22 +740,24 @@ export default function OrderReviewSinglePage() {
     setPreviews({});
   };
 
-  const payload = selectedOrder?.partnerPayload || {};
-  const items = payload.items || [];
+  const imageEditable = selectedOrder
+    ? getImageEditableFromOrder(selectedOrder)
+    : null;
+  const updatedImageUrl = selectedOrder?.updated_image?.value || null;
 
-  const needsEdit = !!selectedOrder?.needsEdit;
-  const canSend =
-    !!selectedOrder && (!needsEdit || selectedOrder.status === "ready");
-
-  // ✅ Always convert to GID (important for metafield update)
-  const shopifyOrderId = toOrderGid(selectedOrder?.shopifyOrderId);
-
+  const shopifyOrderId = toOrderGid(selectedOrder?.id);
+  const lineEdges = selectedOrder?.lineItems?.edges || [];
+  const canSend = !!selectedOrder && imageEditable === "editable";
+  console.log("first", orders);
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Order Review Queue</h1>
-          <p style={styles.subtitle}>Review + Upload + Update</p>
+          <h1 style={styles.title}>Order Review (DB-free)</h1>
+          <p style={styles.subtitle}>
+            Editable → upload/edit → Send to Partner | Not editable → webhook
+            auto send
+          </p>
         </div>
         <div style={styles.metaRight}>
           <span style={styles.countPill}>Total: {orders?.length ?? 0}</span>
@@ -448,7 +773,6 @@ export default function OrderReviewSinglePage() {
       {uploadMsg && <div style={styles.alertOk}>{uploadMsg}</div>}
 
       <div style={styles.grid}>
-        {/* LEFT */}
         <div style={styles.card}>
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
@@ -456,10 +780,10 @@ export default function OrderReviewSinglePage() {
                 <tr style={styles.theadRow}>
                   {[
                     "Pick",
-                    "Status",
+                    "Type",
                     "Order #",
                     "Email",
-                    "Needs Edit",
+                    "Partner",
                     "Created",
                   ].map((h) => (
                     <th key={h} style={styles.th}>
@@ -469,35 +793,51 @@ export default function OrderReviewSinglePage() {
                 </tr>
               </thead>
               <tbody>
-                {(orders || []).map((o, idx) => (
-                  <tr
-                    key={o.id}
-                    style={{
-                      backgroundColor: idx % 2 === 0 ? "#fff" : "#f9fafb",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => selectOrder(o.id)}
-                  >
-                    <td style={styles.td}>
-                      <input
-                        type="radio"
-                        checked={orderId === o.id}
-                        onChange={() => selectOrder(o.id)}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      <span style={badge(o.status)}>{o.status}</span>
-                    </td>
-                    <td style={styles.tdStrong}>{o.orderNumber || "-"}</td>
-                    <td style={styles.tdMuted}>{o.customerEmail || "-"}</td>
-                    <td style={styles.tdMuted}>{o.needsEdit ? "Yes" : "No"}</td>
-                    <td style={styles.tdMuted}>
-                      {o.createdAt
-                        ? new Date(o.createdAt).toLocaleString()
-                        : "-"}
-                    </td>
-                  </tr>
-                ))}
+                {(orders || [])
+                  .filter((o) => o.imageEditable !== "not_editable")
+                  .map((o, idx) => {
+                    const type =
+                      o.imageEditable === "not_editable"
+                        ? "auto/direct"
+                        : "editable";
+                    const p = o.partnerStatus || "-";
+                    return (
+                      <tr
+                        key={o.id}
+                        style={{
+                          backgroundColor: idx % 2 === 0 ? "#fff" : "#f9fafb",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => selectOrder(o.id)}
+                      >
+                        <td style={styles.td}>
+                          <input
+                            type="radio"
+                            checked={orderId === o.id}
+                            onChange={() => selectOrder(o.id)}
+                          />
+                        </td>
+                        <td style={styles.td}>
+                          <span
+                            style={badge(
+                              type === "editable" ? "editable" : "auto",
+                            )}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td style={styles.tdStrong}>{o.name || "-"}</td>
+                        <td style={styles.tdMuted}>{o.email || "-"}</td>
+                        <td style={styles.tdMuted}>{p}</td>
+                        <td style={styles.tdMuted}>
+                          {o.createdAt
+                            ? new Date(o.createdAt).toLocaleString()
+                            : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
                 {(orders?.length ?? 0) === 0 && (
                   <tr>
                     <td style={{ padding: 18 }} colSpan={6}>
@@ -510,7 +850,6 @@ export default function OrderReviewSinglePage() {
           </div>
         </div>
 
-        {/* RIGHT */}
         <div style={styles.detailCard}>
           {!selectedOrder ? (
             <div style={{ padding: 16, opacity: 0.8 }}>
@@ -520,188 +859,149 @@ export default function OrderReviewSinglePage() {
             <div style={{ padding: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <h2 style={{ margin: 0, fontSize: 18 }}>
-                  Order #{selectedOrder.orderNumber || ""}
+                  {selectedOrder.name}
                 </h2>
-                <span style={badge(selectedOrder.status)}>
-                  {selectedOrder.status}
+
+                <span style={badge(canSend ? "editable" : "auto")}>
+                  {imageEditable === "editable" ? "editable" : "auto/direct"}
                 </span>
+
                 <button type="button" onClick={clearSelection} style={tinyBtn}>
                   Clear
                 </button>
               </div>
 
-              {!shopifyOrderId && (
+              <div style={{ height: 10 }} />
+
+              {!canSend && (
                 <div style={styles.alertError}>
-                  (DB) Missing shopifyOrderId (gid://shopify/Order/...) or
-                  invalid
+                  This order is <b>not_editable</b> (or missing “Image
+                  Editable”). Webhook should auto-send it. This page is mainly
+                  for editable orders.
                 </div>
               )}
 
-              <div style={{ height: 10 }} />
+              <div style={{ ...card, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                  Updated Image (Metafield)
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.8 }}>
+                  Metafield: <b>custom.updated_image</b>
+                </div>
+                <div style={{ height: 10 }} />
+                {updatedImageUrl ? (
+                  <div style={previewWrap}>
+                    <img
+                      src={updatedImageUrl}
+                      alt="updated preview"
+                      style={previewImg}
+                      onClick={() => window.open(updatedImageUrl, "_blank")}
+                    />
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>
+                      Click preview
+                    </div>
+                  </div>
+                ) : (
+                  <div style={previewPlaceholder}>No updated image yet</div>
+                )}
+              </div>
 
               <Form method="post">
                 <input type="hidden" name="orderId" value={selectedOrder.id} />
 
-                {/* Needs Edit */}
-                <div style={{ ...card, padding: 12, marginBottom: 12 }}>
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                    Needs image editing?
-                  </div>
-                  <label style={radioRow}>
-                    <input
-                      type="radio"
-                      name="needsEdit"
-                      value="false"
-                      defaultChecked={!selectedOrder.needsEdit}
-                    />
-                    <span>✅ No, send directly</span>
-                  </label>
-                  <label style={radioRow}>
-                    <input
-                      type="radio"
-                      name="needsEdit"
-                      value="true"
-                      defaultChecked={!!selectedOrder.needsEdit}
-                    />
-                    <span>✏️ Yes, requires editing</span>
-                  </label>
-                  <button
-                    type="submit"
-                    name="_intent"
-                    value="set_needs_edit"
-                    style={{ ...secondaryBtn, marginTop: 10 }}
-                  >
-                    Save Needs Edit
-                  </button>
-                </div>
-
-                {/* Status */}
-                <div style={{ ...card, padding: 12, marginBottom: 12 }}>
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                    Update Status
-                  </div>
-                  {["pending", "editable", "ready", "sent", "failed"].map(
-                    (s) => (
-                      <label key={s} style={radioRow}>
-                        <input
-                          type="radio"
-                          name="nextStatus"
-                          value={s}
-                          defaultChecked={selectedOrder.status === s}
-                        />
-                        <span style={badge(s)}>{s}</span>
-                      </label>
-                    ),
-                  )}
-                  <button
-                    type="submit"
-                    name="_intent"
-                    value="update_status"
-                    style={{ ...secondaryBtn, marginTop: 10 }}
-                  >
-                    Update Status
-                  </button>
-                </div>
-
-                {/* Files */}
                 <div style={{ display: "grid", gap: 12 }}>
-                  {items.map((it, idx) => (
-                    <div key={idx} style={card}>
-                      <div style={{ fontWeight: 800 }}>
-                        {it.productName || `Item ${idx + 1}`}
-                      </div>
-                      <div style={{ opacity: 0.8, marginTop: 4 }}>
-                        Qty: {it.quantity || 1}
-                      </div>
+                  {lineEdges.map((edge, idx) => {
+                    const it = edge.node;
+                    const key = `${idx}`;
+                    const original = getFirstFileUrlFromLineItem(it);
+                    const previewUrl =
+                      previews[key] || updatedImageUrl || original || "";
 
-                      <div style={{ height: 10 }} />
+                    return (
+                      <div key={it.id} style={card}>
+                        <div style={{ fontWeight: 800 }}>
+                          {it.title || `Item ${idx + 1}`}
+                        </div>
+                        <div style={{ opacity: 0.8, marginTop: 4 }}>
+                          Qty: {it.quantity || 1}
+                        </div>
 
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {(it.files || []).map((f, fIdx) => {
-                          const inputName = `fileUrl__${idx}__${fIdx}`;
-                          const inputId = `url-${idx}-${fIdx}`;
-                          const key = `${idx}__${fIdx}`;
-                          const previewUrl = previews[key] || f.url || "";
+                        <div style={{ height: 10 }} />
 
-                          return (
-                            <div key={fIdx} style={fileBlock}>
-                              {previewUrl ? (
-                                <div style={previewWrap}>
-                                  <img
-                                    src={previewUrl}
-                                    alt="preview"
-                                    style={previewImg}
-                                    onClick={() =>
-                                      window.open(previewUrl, "_blank")
-                                    }
-                                  />
-                                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                    Preview (click)
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={previewPlaceholder}>No preview</div>
-                              )}
-
-                              <label style={label}>File URL</label>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 10,
-                                  alignItems: "center",
-                                }}
-                              >
-                                <input
-                                  id={inputId}
-                                  name={inputName}
-                                  defaultValue={f.url || ""}
-                                  placeholder="https://..."
-                                  style={input}
-                                  onChange={(e) =>
-                                    setPreviews((p) => ({
-                                      ...p,
-                                      [key]: e.target.value,
-                                    }))
-                                  }
-                                />
-
-                                <UploadAndSaveImage
-                                  shop={shop}
-                                  shopify={shopify}
-                                  fetcher={fetcher}
-                                  inputId={inputId}
-                                  shopifyOrderId={shopifyOrderId}
-                                  onPreview={(url) =>
-                                    setPreviews((p) => ({ ...p, [key]: url }))
-                                  }
-                                  onSuccessMsg={(m) => {
-                                    setUploadErr("");
-                                    setUploadMsg(m);
-                                  }}
-                                  onErrorMsg={(m) => {
-                                    setUploadMsg("");
-                                    setUploadErr(m);
-                                  }}
-                                />
+                        <div style={fileBlock}>
+                          {previewUrl ? (
+                            <div style={previewWrap}>
+                              <img
+                                src={previewUrl}
+                                alt="preview"
+                                style={previewImg}
+                                onClick={() =>
+                                  window.open(previewUrl, "_blank")
+                                }
+                              />
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Preview (updated_image first)
                               </div>
                             </div>
-                          );
-                        })}
+                          ) : (
+                            <div style={previewPlaceholder}>No preview</div>
+                          )}
+
+                          <label style={label}>
+                            Set updated image (custom.updated_image)
+                          </label>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              id={`url-${idx}`}
+                              defaultValue={updatedImageUrl || ""}
+                              placeholder="https://... (saved as custom.updated_image)"
+                              style={input}
+                              onChange={(e) =>
+                                setPreviews((p) => ({
+                                  ...p,
+                                  [key]: e.target.value,
+                                }))
+                              }
+                            />
+
+                            <UploadAndSaveImage
+                              shop={shop}
+                              shopify={shopify}
+                              fetcher={fetcher}
+                              inputId={`url-${idx}`}
+                              shopifyOrderId={shopifyOrderId}
+                              onPreview={(url) =>
+                                setPreviews((p) => ({ ...p, [key]: url }))
+                              }
+                              onSuccessMsg={(m) => {
+                                setUploadErr("");
+                                setUploadMsg(m);
+                              }}
+                              onErrorMsg={(m) => {
+                                setUploadMsg("");
+                                setUploadErr(m);
+                              }}
+                            />
+                          </div>
+
+                          <div
+                            style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
+                          >
+                            Original File URL: {original || "—"}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="submit"
-                      name="_intent"
-                      value="save_editable"
-                      style={primaryBtn}
-                    >
-                      Save URLs (Editable)
-                    </button>
-
                     <button
                       type="submit"
                       name="_intent"
@@ -827,12 +1127,6 @@ const card = {
   background: "#fff",
   padding: 14,
 };
-const radioRow = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  marginBottom: 6,
-};
 const label = {
   display: "block",
   fontSize: 13,
@@ -846,15 +1140,6 @@ const input = {
   border: "1px solid #d1d5db",
   fontSize: 14,
 };
-const primaryBtn = {
-  background: "#111827",
-  color: "#fff",
-  border: "1px solid #111827",
-  borderRadius: 10,
-  padding: "10px 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
 const dangerBtn = {
   background: "#dc2626",
   color: "#fff",
@@ -862,14 +1147,6 @@ const dangerBtn = {
   borderRadius: 10,
   padding: "10px 14px",
   fontWeight: 800,
-  cursor: "pointer",
-};
-const secondaryBtn = {
-  border: "1px solid #d1d5db",
-  borderRadius: 10,
-  padding: "10px 14px",
-  fontWeight: 800,
-  background: "#fff",
   cursor: "pointer",
 };
 const tinyBtn = {
@@ -926,15 +1203,9 @@ const badge = (status) => {
     fontWeight: 800,
     textTransform: "capitalize",
   };
-  if (status === "pending")
-    return { ...base, background: "#fef3c7", color: "#92400e" };
   if (status === "editable")
     return { ...base, background: "#dbeafe", color: "#1e40af" };
-  if (status === "ready")
+  if (status === "auto")
     return { ...base, background: "#dcfce7", color: "#166534" };
-  if (status === "sent")
-    return { ...base, background: "#e0e7ff", color: "#3730a3" };
-  if (status === "failed")
-    return { ...base, background: "#fee2e2", color: "#991b1b" };
   return { ...base, background: "#e5e7eb", color: "#111827" };
 };

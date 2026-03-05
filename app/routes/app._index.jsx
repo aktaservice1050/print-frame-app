@@ -3,194 +3,188 @@
 /* eslint-disable jsx-a11y/no-static-element-interactions */
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
-import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
-
-/**
- * ✅ Convert stored DB id into Shopify GID if needed
- * - If already gid://shopify/Order/... return as-is
- * - If numeric/string numeric => convert to gid
- */
-const toOrderGid = (id) => {
-  if (!id) return null;
-  const str = String(id);
-  if (str.startsWith("gid://shopify/Order/")) return str;
-  // numeric id => gid
-  if (/^\d+$/.test(str)) return `gid://shopify/Order/${str}`;
-  // fallback: if it's something else, return as-is (maybe already gid)
-  return str;
-};
-
-/**
- * ✅ Fetch ONLY the orders that are in DB (orderQueue) using nodes(ids)
- * nodes query supports up to 250 ids per call, so chunk it.
- */
-const fetchOrdersByIds = async (admin, orderGids) => {
-  const chunkSize = 200; // safe
-  const chunks = [];
-  for (let i = 0; i < orderGids.length; i += chunkSize) {
-    chunks.push(orderGids.slice(i, i + chunkSize));
-  }
-
-  const all = [];
-
-  for (const ids of chunks) {
-    const response = await admin.graphql(
-      `#graphql
-      query getOrdersByIds($ids: [ID!]!) {
-        nodes(ids: $ids) {
-          ... on Order {
-            id
-            name
-            email
-            createdAt
-            displayFinancialStatus
-            displayFulfillmentStatus
-            totalPriceSet {
-              shopMoney { amount currencyCode }
-            }
-            subtotalPriceSet {
-              shopMoney { amount currencyCode }
-            }
-            totalDiscountsSet {
-              shopMoney { amount currencyCode }
-            }
-            totalShippingPriceSet {
-              shopMoney { amount currencyCode }
-            }
-            totalTaxSet {
-              shopMoney { amount currencyCode }
-            }
-            customer {
-              id
-              firstName
-              lastName
-              email
-              phone
-            }
-            shippingAddress {
-              firstName
-              lastName
-              address1
-              address2
-              city
-              province
-              country
-              zip
-              phone
-            }
-            billingAddress {
-              firstName
-              lastName
-              address1
-              address2
-              city
-              province
-              country
-              zip
-              phone
-            }
-            lineItems(first: 250) {
-              edges {
-                node {
-                  id
-                  title
-                  quantity
-                  originalUnitPriceSet {
-                    shopMoney { amount currencyCode }
-                  }
-                  discountedUnitPriceSet {
-                    shopMoney { amount currencyCode }
-                  }
-                  variant { id title sku price }
-                  product { id title handle }
-                  customAttributes { key value }
-                }
-              }
-            }
-            customAttributes { key value }
-            metafields(first: 10) {
-              edges {
-                node {
-                  id
-                  namespace
-                  key
-                  value
-                }
-              }
-            }
-            note
-            tags
-            cancelledAt
-            cancelReason
-            fulfillments {
-              id
-              status
-              createdAt
-              trackingInfo { number url company }
-            }
-            transactions {
-              id
-              kind
-              status
-              amount
-              gateway
-            }
-          }
-        }
-      }`,
-      { variables: { ids } },
-    );
-
-    const json = await response.json();
-    const nodes = json?.data?.nodes || [];
-    // nodes may contain null if not found / no access
-    all.push(...nodes.filter(Boolean));
-  }
-
-  return all;
-};
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
 
-  // ✅ 1) ONLY DB orders
-  const dbOrders = await prisma.orderQueue.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 500,
-  });
+  const orders = [];
+  let hasNextPage = true;
+  let endCursor = null;
 
-  // ✅ 2) Build ids for Shopify fetch (ONLY those in DB)
-  const orderGids = dbOrders
-    .map((o) => toOrderGid(o.shopifyOrderId))
-    .filter(Boolean);
+  while (hasNextPage) {
+    const response = await admin.graphql(
+      `#graphql
+        query getOrders($cursor: String) {
+          orders(first: 250, after: $cursor, reverse: true) {
+            edges {
+              cursor
+              node {
+                id
+                name
+                email
+                createdAt
+                displayFinancialStatus
+                displayFulfillmentStatus
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                subtotalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                totalDiscountsSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                totalShippingPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                totalTaxSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                customer {
+                  id
+                  firstName
+                  lastName
+                  email
+                  phone
+                }
+                shippingAddress {
+                  firstName
+                  lastName
+                  address1
+                  address2
+                  city
+                  province
+                  country
+                  zip
+                  phone
+                }
+                billingAddress {
+                  firstName
+                  lastName
+                  address1
+                  address2
+                  city
+                  province
+                  country
+                  zip
+                  phone
+                }
+                lineItems(first: 250) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      originalUnitPriceSet {
+                        shopMoney {
+                          amount
+                          currencyCode
+                        }
+                      }
+                      discountedUnitPriceSet {
+                        shopMoney {
+                          amount
+                          currencyCode
+                        }
+                      }
+                      variant {
+                        id
+                        title
+                        sku
+                        price
+                      }
+                      product {
+                        id
+                        title
+                        handle
+                      }
+                      customAttributes {
+                        key
+                        value
+                      }
+                    }
+                  }
+                }
+                customAttributes {
+                  key
+                  value
+                }
+                metafields(first: 10) {
+                  edges {
+                    node {
+                      id
+                      namespace
+                      key
+                      value
+                    }
+                  }
+                }
+                note
+                tags
+                cancelledAt
+                cancelReason
+                fulfillments {
+                  id
+                  status
+                  createdAt
+                  trackingInfo {
+                    number
+                    url
+                    company
+                  }
+                }
+                transactions {
+                  id
+                  kind
+                  status
+                  amount
+                  gateway
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }`,
+      {
+        variables: {
+          cursor: endCursor,
+        },
+      },
+    );
 
-  // If DB empty, return empty list
-  if (orderGids.length === 0) {
-    return {
-      orders: [],
-      dbOrders,
-      totalOrders: 0,
-      shop: session.shop,
-      accessToken: session.accessToken,
-    };
+    const json = await response.json();
+    const edges = json?.data?.orders?.edges || [];
+
+    orders.push(...edges.map((edge) => edge.node));
+
+    hasNextPage = json?.data?.orders?.pageInfo?.hasNextPage || false;
+    endCursor = json?.data?.orders?.pageInfo?.endCursor || null;
   }
 
-  // ✅ 3) Fetch only those orders from Shopify
-  const orders = await fetchOrdersByIds(admin, orderGids);
-
-  // ✅ Optional: keep same order as DB (latest first)
-  const orderMap = new Map(orders.map((o) => [o.id, o]));
-  const orderedOrders = orderGids
-    .map((gid) => orderMap.get(gid))
-    .filter(Boolean);
-
   return {
-    orders: orderedOrders,
-    dbOrders,
-    totalOrders: orderedOrders.length,
+    orders,
+    totalOrders: orders.length,
     shop: session.shop,
     accessToken: session.accessToken,
   };
@@ -201,7 +195,6 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const actionType = formData.get("actionType");
 
-  // Update order metafield with new image URL
   if (actionType === "updateImage") {
     const orderId = formData.get("orderId");
     const imageUrl = formData.get("imageUrl");
@@ -215,11 +208,19 @@ export const action = async ({ request }) => {
                 id
                 metafields(first: 10) {
                   edges {
-                    node { id namespace key value }
+                    node {
+                      id
+                      namespace
+                      key
+                      value
+                    }
                   }
                 }
               }
-              userErrors { field message }
+              userErrors {
+                field
+                message
+              }
             }
           }`,
         {
@@ -259,17 +260,16 @@ export const action = async ({ request }) => {
 
 // Get image URL from metafield or custom attributes
 const getImageUrl = (order) => {
-  // First check metafield for updated image
   const metafieldImage = order.metafields?.edges?.find(
     (edge) =>
       edge.node.namespace === "custom" && edge.node.key === "updated_image",
   );
+
   if (metafieldImage) {
     return { url: metafieldImage.node.value, isUpdated: true };
   }
 
-  // Fallback to original custom attribute
-  const firstLineItem = order.lineItems.edges[0]?.node;
+  const firstLineItem = order.lineItems?.edges?.[0]?.node;
   const fileUrlAttr = firstLineItem?.customAttributes?.find(
     (attr) => attr.key === "File URL" || attr.key === "_file_url",
   );
@@ -278,7 +278,7 @@ const getImageUrl = (order) => {
 };
 
 export default function Index() {
-  const { orders, totalOrders, shop, dbOrders } = useLoaderData();
+  const { orders, totalOrders, shop } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
 
@@ -290,8 +290,8 @@ export default function Index() {
   const [localImages, setLocalImages] = useState({});
 
   const itemsPerPage = 20;
+  const revalidator = useRevalidator();
 
-  // ✅ Add this iframe check here
   useEffect(() => {
     if (window.top === window.self) {
       window.location.href = "/auth/login";
@@ -300,13 +300,10 @@ export default function Index() {
 
   useEffect(() => {
     if (totalOrders > 0) {
-      shopify.toast.show(`${totalOrders} DB orders loaded`);
+      shopify.toast.show(`${totalOrders} orders loaded`);
     }
   }, [totalOrders, shopify]);
 
-  const revalidator = useRevalidator();
-
-  // Handle metafield update response
   useEffect(() => {
     if (fetcher.data?.success) {
       shopify.toast.show("Image updated successfully!");
@@ -317,32 +314,18 @@ export default function Index() {
     }
   }, [fetcher.data, revalidator, shopify]);
 
-  // (Optional) Map DB orderQueue info by Shopify order id (for future use)
-  const dbByShopifyId = useMemo(() => {
-    const m = new Map();
-    for (const o of dbOrders || []) {
-      const gid = toOrderGid(o.shopifyOrderId);
-      if (gid) m.set(gid, o);
-    }
-    return m;
-  }, [dbOrders]);
-
-  // Filter orders based on search term
   const filteredOrders = orders.filter((order) => {
     const search = searchTerm.toLowerCase();
-    const dbRow = dbByShopifyId.get(order.id); // ✅ DB data available if you want
 
     return (
       order.name?.toLowerCase().includes(search) ||
       order.email?.toLowerCase().includes(search) ||
       order.customer?.firstName?.toLowerCase().includes(search) ||
       order.customer?.lastName?.toLowerCase().includes(search) ||
-      order.shippingAddress?.city?.toLowerCase().includes(search) ||
-      dbRow?.orderNumber?.toLowerCase?.().includes?.(search) // fallback if you search by DB orderNumber
+      order.shippingAddress?.city?.toLowerCase().includes(search)
     );
   });
 
-  // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedOrders = filteredOrders.slice(
@@ -350,16 +333,15 @@ export default function Index() {
     startIndex + itemsPerPage,
   );
 
-  // Handle file upload to S3
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validate file
     if (!file.type.startsWith("image/")) {
       shopify.toast.show("Please select an image file");
       return;
     }
+
     if (file.size > 10 * 1024 * 1024) {
       shopify.toast.show("File size must be less than 10MB");
       return;
@@ -368,7 +350,6 @@ export default function Index() {
     setUploading(true);
 
     try {
-      // Upload to S3
       const formData = new FormData();
       formData.append("file", file);
       formData.append("shop", shop);
@@ -381,17 +362,16 @@ export default function Index() {
       const result = await response.json();
 
       if (result.success && result.fileUrl) {
-        // Update local state immediately for preview
         setLocalImages((prev) => ({
           ...prev,
           [editModal.order.id]: result.fileUrl,
         }));
 
-        // Save to Shopify metafield
         const metafieldForm = new FormData();
         metafieldForm.append("actionType", "updateImage");
         metafieldForm.append("orderId", editModal.order.id);
         metafieldForm.append("imageUrl", result.fileUrl);
+
         fetcher.submit(metafieldForm, { method: "POST" });
       } else {
         shopify.toast.show(`Upload failed: ${result.error}`);
@@ -403,11 +383,9 @@ export default function Index() {
     }
   };
 
-  // Format currency
   const formatMoney = (amount, currency) =>
     `${parseFloat(amount).toFixed(2)} ${currency}`;
 
-  // Status badge component
   const getStatusBadge = (status) => {
     const colors = {
       PAID: { bg: "#d4edda", color: "#155724" },
@@ -417,7 +395,9 @@ export default function Index() {
       UNFULFILLED: { bg: "#fff3cd", color: "#856404" },
       PARTIALLY_FULFILLED: { bg: "#d1ecf1", color: "#0c5460" },
     };
+
     const style = colors[status] || { bg: "#e2e3e5", color: "#383d41" };
+
     return (
       <span
         style={{
@@ -434,7 +414,6 @@ export default function Index() {
     );
   };
 
-  // Styles
   const styles = {
     container: { padding: "20px", fontFamily: "Arial, sans-serif" },
     header: {
@@ -592,9 +571,10 @@ export default function Index() {
     },
   };
 
+  console.log("orders", orders);
+
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>📦 Orders ({totalOrders})</h1>
         <input
@@ -609,7 +589,6 @@ export default function Index() {
         />
       </div>
 
-      {/* Table */}
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
           <thead>
@@ -633,8 +612,8 @@ export default function Index() {
             {paginatedOrders.map((order, index) => {
               const imageData = getImageUrl(order);
               const displayUrl = localImages[order.id] || imageData.url;
-              const isUpdated = localImages[order.id] || imageData.isUpdated;
-              console.log("data");
+              const isUpdated = !!localImages[order.id] || imageData.isUpdated;
+
               return (
                 <tr
                   key={order.id}
@@ -642,7 +621,6 @@ export default function Index() {
                     backgroundColor: index % 2 === 0 ? "#fff" : "#f8f9fa",
                   }}
                 >
-                  {/* Image Column */}
                   <td style={styles.td}>
                     <div style={styles.imageContainer}>
                       {isUpdated && (
@@ -678,7 +656,6 @@ export default function Index() {
                     </div>
                   </td>
 
-                  {/* Order Info */}
                   <td style={styles.td}>
                     <strong style={{ color: "#007bff" }}>{order.name}</strong>
                     <br />
@@ -687,7 +664,6 @@ export default function Index() {
                     </small>
                   </td>
 
-                  {/* Customer */}
                   <td style={styles.td}>
                     <strong>
                       {order.customer
@@ -702,7 +678,6 @@ export default function Index() {
                     </small>
                   </td>
 
-                  {/* Items */}
                   <td style={styles.td}>
                     {order.lineItems.edges.slice(0, 2).map((item, i) => (
                       <div
@@ -719,7 +694,6 @@ export default function Index() {
                     )}
                   </td>
 
-                  {/* Total */}
                   <td style={styles.td}>
                     <strong>
                       {formatMoney(
@@ -729,12 +703,10 @@ export default function Index() {
                     </strong>
                   </td>
 
-                  {/* Payment Status */}
                   <td style={styles.td}>
                     {getStatusBadge(order.displayFinancialStatus)}
                   </td>
 
-                  {/* Delivery Status */}
                   <td style={styles.td}>
                     {getStatusBadge(order.displayFulfillmentStatus)}
                   </td>
@@ -745,7 +717,6 @@ export default function Index() {
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div style={styles.pagination}>
           <button
@@ -773,14 +744,12 @@ export default function Index() {
         </div>
       )}
 
-      {/* Empty State */}
       {filteredOrders.length === 0 && (
         <div style={{ textAlign: "center", padding: "40px", color: "#6c757d" }}>
           No orders found
         </div>
       )}
 
-      {/* Full Image Preview Modal */}
       {selectedImage && (
         <div style={styles.modal} onClick={() => setSelectedImage(null)}>
           <button
@@ -793,7 +762,6 @@ export default function Index() {
         </div>
       )}
 
-      {/* Edit Image Modal */}
       {editModal.open && (
         <div
           style={styles.modal}
@@ -807,7 +775,6 @@ export default function Index() {
               Order: <strong>{editModal.order?.name}</strong>
             </p>
 
-            {/* Current Image Preview */}
             {(localImages[editModal.order?.id] ||
               getImageUrl(editModal.order).url) && (
               <div style={{ marginBottom: "20px" }}>
@@ -830,7 +797,6 @@ export default function Index() {
               </div>
             )}
 
-            {/* Upload Input */}
             <input
               type="file"
               accept="image/*"
@@ -857,7 +823,6 @@ export default function Index() {
               Cancel
             </button>
 
-            {/* Upload Progress */}
             {uploading && (
               <div style={{ marginTop: "15px", color: "#007bff" }}>
                 Uploading to S3 and saving to Shopify...

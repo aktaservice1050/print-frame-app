@@ -11,18 +11,21 @@
         price: 49,
         variantId: null, // ✅ Add this
         uploadedFile: null,
-        fileObject: null
+        fileObject: null,
+        imageEditable:
+        document.querySelector(".image-editable-container")?.dataset
+          ?.imageEditable || "editable"
       };
-  
+
       this.init();
     }
-  
+
     init() {
       this.setupEventListeners();
       this.updatePreview();
       this.setInitialVariant(); // ✅ Set initial variant
     }
-  
+
     // ✅ Set initial variant ID
     setInitialVariant() {
       const firstBtn = document.querySelector('.option-btn.active');
@@ -30,10 +33,10 @@
         this.selectedOptions.variantId = firstBtn.dataset.variantId;
       }
     }
-  
+
     setupEventListeners() {
       const self = this;
-  
+
       // ============ FRAME TYPE (Desktop) ============
       document.querySelectorAll('.option-btn').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -45,17 +48,17 @@
           self.updatePreview();
         });
       });
-  
+
       // ============ FRAME TYPE (Mobile Select) ============
       const frameSelect = document.getElementById('frameTypeSelect');
       if (frameSelect) {
         frameSelect.addEventListener('change', function() {
           const selectedOption = this.options[this.selectedIndex];
-  
+
           self.selectedOptions.frameType = selectedOption.dataset.type;
           self.selectedOptions.price = parseFloat(selectedOption.dataset.price);
           self.selectedOptions.variantId = selectedOption.value; // ✅
-  
+
           // Sync desktop buttons
           document.querySelectorAll('.option-btn').forEach(btn => {
             btn.classList.remove('active');
@@ -63,12 +66,12 @@
               btn.classList.add('active');
             }
           });
-  
+
           self.updatePreview();
           console.log('Mobile Frame Type Changed:', self.selectedOptions);
         });
       }
-  
+
       // ============ FRAME STYLE (Desktop) ============
       document.querySelectorAll('.style-btn').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -78,13 +81,13 @@
           self.updatePreview();
         });
       });
-  
+
       // ============ FRAME STYLE (Mobile Select) ============
       const styleSelect = document.getElementById('frameStyleSelect');
       if (styleSelect) {
         styleSelect.addEventListener('change', function() {
           self.selectedOptions.frameStyle = this.value;
-  
+
           // Sync desktop buttons
           document.querySelectorAll('.style-btn').forEach(btn => {
             btn.classList.remove('active');
@@ -92,12 +95,12 @@
               btn.classList.add('active');
             }
           });
-  
+
           self.updatePreview();
           console.log('Mobile Frame Style Changed:', self.selectedOptions);
         });
       }
-  
+
       // ============ ORIENTATION (Desktop) ============
       document.querySelectorAll('.orient-btn').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -107,13 +110,13 @@
           self.updatePreview();
         });
       });
-  
+
       // ============ ORIENTATION (Mobile Select) ============
       const orientSelect = document.getElementById('orientationSelect');
       if (orientSelect) {
         orientSelect.addEventListener('change', function() {
           self.selectedOptions.orientation = this.value;
-  
+
           // Sync desktop buttons
           document.querySelectorAll('.orient-btn').forEach(btn => {
             btn.classList.remove('active');
@@ -121,24 +124,24 @@
               btn.classList.add('active');
             }
           });
-  
+
           self.updatePreview();
           console.log('Mobile Orientation Changed:', self.selectedOptions);
         });
       }
-  
+
       // Printing type selection
       document.querySelectorAll('input[name="printing_type"]').forEach(radio => {
         radio.addEventListener('change', function() {
           self.selectedOptions.printing = this.value;
         });
       });
-  
+
       // Quantity controls
       const decreaseBtn = document.getElementById('decreaseQty');
       const increaseBtn = document.getElementById('increaseQty');
       const qtyInput = document.getElementById('quantity');
-  
+
       if (decreaseBtn) {
         decreaseBtn.addEventListener('click', function() {
           if (qtyInput.value > 1) {
@@ -147,32 +150,32 @@
           }
         });
       }
-  
+
       if (increaseBtn) {
         increaseBtn.addEventListener('click', function() {
           qtyInput.value = parseInt(qtyInput.value) + 1;
           self.selectedOptions.quantity = qtyInput.value;
         });
       }
-  
+
       // File Upload
       const fileInput = document.getElementById('fileInput');
       const uploadArea = document.getElementById('uploadArea');
-  
+
       if (uploadArea && fileInput) {
         uploadArea.addEventListener('click', function() {
           fileInput.click();
         });
-  
+
         uploadArea.addEventListener('dragover', function(e) {
           e.preventDefault();
           uploadArea.classList.add('dragging');
         });
-  
+
         uploadArea.addEventListener('dragleave', function() {
           uploadArea.classList.remove('dragging');
         });
-  
+
         uploadArea.addEventListener('drop', function(e) {
           e.preventDefault();
           uploadArea.classList.remove('dragging');
@@ -181,21 +184,21 @@
             self.handleFileSelection(files[0]);
           }
         });
-  
+
         fileInput.addEventListener('change', function() {
           if (this.files.length > 0) {
             self.handleFileSelection(this.files[0]);
           }
         });
       }
-  
+
       // Remove file button
       document.addEventListener('click', function(e) {
         if (e.target.classList.contains('remove-file')) {
           self.removeFile();
         }
       });
-  
+
       // Add to Cart button
       const addToCartBtn = document.getElementById('addToCartBtn');
       if (addToCartBtn) {
@@ -206,27 +209,27 @@
         });
       }
     }
-  
+
     handleFileSelection(file) {
       const maxSize = 10 * 1024 * 1024;
       const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/svg', 'application/pdf'];
-  
+
       if (!allowedTypes.includes(file.type)) {
         alert('Please upload JPG, PNG, or PDF files only');
         return;
       }
-  
+
       if (file.size > maxSize) {
         alert('File size must be less than 10MB');
         return;
       }
-  
+
       const extension = file.name.split('.').pop();
       const randomName = `file_${Date.now()}_${Math.floor(Math.random() * 10000)}.${extension}`;
-  
+
       this.selectedOptions.fileObject = file;
       this.selectedOptions.uploadedFile = randomName;
-  
+
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -242,28 +245,28 @@
         };
         reader.readAsDataURL(file);
       }
-  
+
       document.querySelector('.upload-placeholder').style.display = 'none';
       document.getElementById('fileInfo').style.display = 'flex';
       document.querySelector('.file-name').textContent = randomName;
       document.getElementById('addToCartBtn').disabled = false;
-  
+
       this.showToast('✅ File selected! Click "Add to cart" to upload.');
     }
-  
+
     async uploadToS3(file) {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('shop', window.Shopify?.shop || 'unknown');
-  
+
       try {
         const response = await fetch('/apps/upload-url/api/upload', {
           method: 'POST',
           body: formData,
         });
-  
+
         const result = await response.json();
-  
+
         if (result.success) {
           console.log('S3 Upload successful:', result.fileUrl);
           return result.fileUrl;
@@ -275,61 +278,61 @@
         throw error;
       }
     }
-  
+
     removeFile() {
       this.selectedOptions.uploadedFile = null;
       this.selectedOptions.fileObject = null;
       const fileInput = document.getElementById('fileInput');
       const uploadedImage = document.getElementById('uploadedImage');
       const placeholder = document.getElementById('placeholder');
-  
+
       if (fileInput) fileInput.value = '';
       if (uploadedImage) uploadedImage.style.display = 'none';
       if (placeholder) placeholder.style.display = 'flex';
-  
+
       document.querySelector('.upload-placeholder').style.display = 'block';
       document.getElementById('fileInfo').style.display = 'none';
       document.getElementById('addToCartBtn').disabled = true;
     }
-  
+
     updatePreview() {
       const preview = document.getElementById('framePreview');
       const frameType = this.selectedOptions.frameType;
       const frameStyle = this.selectedOptions.frameStyle;
       const orientation = this.selectedOptions.orientation;
-  
+
       if (preview) {
         preview.className = 'frame-preview ' + frameType + ' ' + frameStyle + ' ' + orientation;
       }
     }
-  
+
     async addToCart() {
       if (!this.selectedOptions.fileObject) {
         this.showToast('⚠️ Please select a file first!', true);
         return;
       }
-  
+
       const addToCartBtn = document.getElementById('addToCartBtn');
       addToCartBtn.disabled = true;
       addToCartBtn.textContent = 'Uploading...';
-  
+
       try {
         const fileUrl = await this.uploadToS3(this.selectedOptions.fileObject);
-  
+
         if (!fileUrl) throw new Error('File upload failed');
-  
+
         addToCartBtn.textContent = 'Adding to cart...';
-  
+
         // ✅ Use stored variant ID
         let variantId = this.selectedOptions.variantId;
-  
+
         if (!variantId) {
           console.error('Variant ID not found');
           throw new Error('Variant ID not found');
         }
-  
+
         console.log('✅ Using Variant ID:', variantId);
-  
+
         const cartData = {
           id: variantId,
           quantity: this.selectedOptions.quantity,
@@ -339,27 +342,28 @@
             'Orientation': this.selectedOptions.orientation,
             'Printing': this.selectedOptions.printing,
             'File Name': this.selectedOptions.uploadedFile,
-            'File URL': fileUrl
+            'File URL': fileUrl,
+            'Image Editable': this.selectedOptions.imageEditable,
           }
         };
-  
+
         const res = await fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cartData)
         });
-  
+
         if (!res.ok) throw new Error('Failed to add to cart');
-  
+
         const data = await res.json();
         console.log('✅ Added to cart:', data);
-  
+
         this.showToast('✅ Product added to cart successfully!');
-  
+
         setTimeout(() => {
           window.location.href = '/cart';
         }, 1000);
-  
+
       } catch (error) {
         console.error('Add to cart error:', error);
         this.showToast('⚠️ Something went wrong. Please try again.', true);
@@ -368,7 +372,7 @@
         addToCartBtn.textContent = 'Add to cart';
       }
     }
-  
+
     showToast(message, isError = false) {
       const toast = document.createElement('div');
       toast.textContent = message;
@@ -392,7 +396,7 @@
       }, 3000);
     }
   }
-  
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => new PrintCustomizer());
   } else {

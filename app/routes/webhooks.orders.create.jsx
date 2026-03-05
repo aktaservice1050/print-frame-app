@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
-import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
 
+// helper: JSON Response
 const jsonResponse = (data, init = {}) =>
   new Response(JSON.stringify(data), {
     ...init,
@@ -10,18 +11,76 @@ const jsonResponse = (data, init = {}) =>
     },
   });
 
-export const action = async ({ request }) => {
-  try {
-    // ---- Robust body parsing (works even if body isn't valid JSON) ----
-    let body;
-    const contentType = request.headers.get("content-type") || "";
+// helper: numeric order id -> Shopify GID
+const toOrderGid = (id) => {
+  if (!id) return "";
+  const str = String(id);
+  if (str.startsWith("gid://shopify/Order/")) return str;
+  if (/^\d+$/.test(str)) return `gid://shopify/Order/${str}`;
+  return str;
+};
 
-    if (contentType.includes("application/json")) {
-      body = await request.json().catch(() => null);
-    } else {
-      const text = await request.text();
-      body = text ? JSON.parse(text) : null;
+// helper: find image_editable property
+const getImageEditable = (body) => {
+  const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
+
+  for (const item of lineItems) {
+    if (!Array.isArray(item.properties)) continue;
+
+    const prop =
+      item.properties.find(
+        (p) => String(p?.name || "").toLowerCase() === "image_editable",
+      ) ||
+      item.properties.find(
+        (p) => String(p?.name || "").toLowerCase() === "image editable",
+      );
+
+    if (prop) {
+      return String(prop.value || "").toLowerCase();
     }
+  }
+
+  return null;
+};
+
+// helper: save metafields on order
+const saveOrderMetafields = async (admin, orderGid, metafields = []) => {
+  if (!admin || !orderGid || !metafields.length) return;
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation updateOrderMetafields($input: OrderInput!) {
+        orderUpdate(input: $input) {
+          order { id }
+          userErrors { field message }
+        }
+      }`,
+    {
+      variables: {
+        input: {
+          id: orderGid,
+          metafields,
+        },
+      },
+    },
+  );
+
+  const result = await response.json();
+  const userErrors = result?.data?.orderUpdate?.userErrors || [];
+
+  if (userErrors.length) {
+    throw new Error(userErrors[0].message || "Failed to save metafields");
+  }
+};
+
+export const action = async ({ request }) => {
+  let admin = null;
+
+  try {
+    // ✅ webhook authentication + payload + admin client
+    const webhook = await authenticate.webhook(request);
+    admin = webhook.admin;
+    const body = webhook.payload;
 
     if (!body || typeof body !== "object") {
       return jsonResponse(
@@ -31,6 +90,7 @@ export const action = async ({ request }) => {
     }
 
     const orderId = String(body.id || "");
+    const orderGid = toOrderGid(orderId);
     const orderNumber = String(body.order_number || "");
     const customerEmail = body.email || null;
 
@@ -41,6 +101,45 @@ export const action = async ({ request }) => {
       );
     }
 
+    // ✅ check editable value
+    const imageEditable = getImageEditable(body);
+
+    // editable -> save metafield + exit early
+    if (imageEditable === "editable") {
+      if (admin && orderGid) {
+        await saveOrderMetafields(admin, orderGid, [
+          {
+            namespace: "custom",
+            key: "partner_status",
+            value: "editable",
+            type: "single_line_text_field",
+          },
+          {
+            namespace: "custom",
+            key: "partner_api_status",
+            value: "0",
+            type: "number_integer",
+          },
+          {
+            namespace: "custom",
+            key: "partner_api_response",
+            value: JSON.stringify({
+              message: "Order is editable -> not sent to partner",
+            }),
+            type: "json",
+          },
+        ]);
+      }
+
+      return jsonResponse({
+        success: true,
+        message: "Order is editable → not sent to partner",
+        orderId,
+        orderNumber,
+      });
+    }
+
+    // ---- Build partner payload ----
     const currencyMap = { BDT: "USD", INR: "USD", PKR: "USD" };
     const rawCurrency = body.currency || "USD";
     const validCurrency = currencyMap[rawCurrency] || rawCurrency;
@@ -111,11 +210,16 @@ export const action = async ({ request }) => {
 
           let counter = 1;
           let uniqueType = baseType;
-          while (seenTypes.has(uniqueType))
+
+          while (seenTypes.has(uniqueType)) {
             uniqueType = `${baseType}_${counter++}`;
+          }
 
           seenTypes.add(uniqueType);
-          uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
+          uniqueFiles.push({
+            type: uniqueType,
+            url: normalizedUrl,
+          });
         });
 
         const metadata =
@@ -127,7 +231,10 @@ export const action = async ({ request }) => {
                     !name.includes("file") && !name.includes("certificate")
                   );
                 })
-                .map((prop) => ({ key: prop?.name, value: prop?.value }))
+                .map((prop) => ({
+                  key: prop?.name,
+                  value: prop?.value,
+                }))
             : []) || [];
 
         return {
@@ -168,32 +275,71 @@ export const action = async ({ request }) => {
         : null,
     };
 
-    await prisma.orderQueue.upsert({
-      where: { shopifyOrderId: orderId },
-      update: {
-        orderNumber,
-        customerEmail,
-        rawCurrency,
-        partnerPayload,
-        status: "pending",
+    const partnerApiUrl =
+      "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
+
+    const PARTNER_API_KEY = "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
+
+    // ---- Send to Partner API ----
+    const partnerResponse = await fetch(partnerApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": PARTNER_API_KEY,
       },
-      create: {
-        shopifyOrderId: orderId,
-        orderNumber,
-        customerEmail,
-        rawCurrency,
-        partnerPayload,
-        status: "pending",
-      },
+      body: JSON.stringify(partnerPayload),
     });
 
-    // Shopify expects 200 quickly
-    return jsonResponse(
-      { success: true, message: "Saved to queue", orderId, orderNumber },
-      { status: 200 },
-    );
+    const responseText = await partnerResponse.text().catch(() => "");
+    const safePartnerApiResponse = JSON.stringify({
+      status: partnerResponse.status,
+      body: String(responseText || "").slice(0, 45000),
+    });
+
+    // ✅ save metafields always
+    if (admin && orderGid) {
+      await saveOrderMetafields(admin, orderGid, [
+        {
+          namespace: "custom",
+          key: "partner_status",
+          value: partnerResponse.ok ? "sent" : "failed",
+          type: "single_line_text_field",
+        },
+        {
+          namespace: "custom",
+          key: "partner_api_status",
+          value: String(partnerResponse.status || 0),
+          type: "number_integer",
+        },
+        {
+          namespace: "custom",
+          key: "partner_api_response",
+          value: safePartnerApiResponse,
+          type: "json",
+        },
+      ]);
+    }
+
+    if (!partnerResponse.ok) {
+      return jsonResponse(
+        {
+          success: false,
+          error: "Partner API failed",
+          status: partnerResponse.status,
+        },
+        { status: 500 },
+      );
+    }
+
+    return jsonResponse({
+      success: true,
+      message: "Order sent to partner",
+      orderId,
+      orderNumber,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
     return jsonResponse({ success: false, error: message }, { status: 500 });
   }
 };

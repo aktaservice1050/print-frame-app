@@ -3,7 +3,18 @@
   {
     "name": "Print & Frame Customizer",
     "target": "section",
-    "settings": []
+    "settings": [
+        {
+      "type": "select",
+      "id": "image_editable",
+      "label": "Image Editable",
+      "options": [
+        { "value": "editable", "label": "Editable" },
+        { "value": "not_editable", "label": "Not Editable" }
+      ],
+      "default": "editable"
+    }
+    ]
   }
 {% endschema %}
 <style>
@@ -298,7 +309,7 @@
     justify-content: center;
   }
 
-span.sub-text {
+  span.sub-text {
     font-weight: normal;
   }
   .input-link-wrap {
@@ -686,7 +697,9 @@ span.sub-text {
             </div>
             <p class="security-note">🔒 Your certificate is securely handled</p>
           </div>
-
+            <!--Is image editable hidden code -->
+                <div class="image-editable-container" data-image-editable="{{ block.settings.image_editable }}"></div>
+            <!-- Is image editable hidden code -->
           <!-- Add to Cart Button -->
           <button
             type="button"
@@ -700,6 +713,7 @@ span.sub-text {
     </div>
   </div>
 </div>
+
 <script>
   // Frame Type selection (with dynamic variant ID)
   document.querySelectorAll('.option-btn').forEach(btn => {
