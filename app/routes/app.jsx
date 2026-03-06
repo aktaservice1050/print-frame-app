@@ -34,11 +34,13 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey} host={host}>
       <s-app-nav>
-        <s-link href={`/app${location.search}`}>Home</s-link>
-        <s-link href={`/app/orderlist${location.search}`}>Order List</s-link>
-        <s-link href={`/app/additional${location.search}`}>
-          Additional page
+        <s-link href={`/app${location.search}`}>Orders</s-link>
+        <s-link href={`/app/orderlist${location.search}`}>
+          Order and review
         </s-link>
+        {/* <s-link href={`/app/additional${location.search}`}>
+          Additional page
+        </s-link> */}
       </s-app-nav>
 
       <Outlet />

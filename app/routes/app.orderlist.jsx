@@ -753,7 +753,7 @@ export default function OrderReviewSinglePage() {
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Order Review (DB-free)</h1>
+          <h1 style={styles.title}>Order Review</h1>
           <p style={styles.subtitle}>
             Editable → upload/edit → Send to Partner | Not editable → webhook
             auto send
