@@ -89,6 +89,7 @@ const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
     orderType: "order",
     orderReferenceId: orderNumber || String(order?.id || ""),
     customerReferenceId: "InkWorthy",
+    ProductName: "inkworthy_certificate",
     currency: validCurrency,
     preventDuplicate: true,
     items: lineEdges.map((edge) => {
@@ -315,22 +316,35 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  console.log("\n========== ACTION TRIGGERED ==========");
+  console.log("⏰ Time:", new Date().toISOString());
+
   try {
     const { admin } = await authenticate.admin(request);
     const form = await request.formData();
     const intent = String(form.get("_intent") || "");
+
+    console.log("📩 Intent received:", intent);
 
     if (intent === "update_image_metafield") {
       const shopifyOrderIdRaw = String(form.get("shopifyOrderId") || "");
       const shopifyOrderId = toOrderGid(shopifyOrderIdRaw);
       const imageUrl = String(form.get("imageUrl") || "");
 
+      console.log("🧾 Update Image Metafield Request");
+      console.log("Order Raw ID:", shopifyOrderIdRaw);
+      console.log("Order GID:", shopifyOrderId);
+      console.log("Image URL:", imageUrl);
+
       if (!shopifyOrderId || !imageUrl) {
+        console.log("❌ Missing orderId or imageUrl");
         return jsonResponse(
           { ok: false, error: "Missing shopifyOrderId or imageUrl" },
           { status: 400 },
         );
       }
+
+      console.log("🚀 Updating Shopify metafield...");
 
       const response = await admin.graphql(
         `#graphql
@@ -364,13 +378,18 @@ export const action = async ({ request }) => {
       );
 
       const result = await response.json();
+      console.log("📨 Shopify response:", JSON.stringify(result, null, 2));
+
       const userErrors = result?.data?.orderUpdate?.userErrors || [];
       if (userErrors.length) {
+        console.log("❌ Shopify metafield error:", userErrors);
         return jsonResponse(
           { ok: false, error: userErrors[0].message },
           { status: 400 },
         );
       }
+
+      console.log("✅ Metafield updated successfully");
 
       return jsonResponse({ ok: true, intent }, { status: 200 });
     }
@@ -379,12 +398,19 @@ export const action = async ({ request }) => {
       const orderIdRaw = String(form.get("orderId") || "");
       const orderId = toOrderGid(orderIdRaw);
 
+      console.log("\n🚀 Send Partner Request");
+      console.log("Order Raw ID:", orderIdRaw);
+      console.log("Order GID:", orderId);
+
       if (!orderId) {
+        console.log("❌ Missing orderId");
         return jsonResponse(
           { ok: false, error: "Missing orderId" },
           { status: 400 },
         );
       }
+
+      console.log("🔎 Fetching order from Shopify...");
 
       const r = await admin.graphql(
         `#graphql
@@ -417,17 +443,26 @@ export const action = async ({ request }) => {
       );
 
       const j = await r.json();
+      console.log("📦 Shopify Order Response:", JSON.stringify(j, null, 2));
+
       const order = j?.data?.order;
 
       if (!order) {
+        console.log("❌ Order not found");
         return jsonResponse(
           { ok: false, error: "Order not found" },
           { status: 404 },
         );
       }
 
+      console.log("🧾 Order Name:", order?.name);
+      console.log("📧 Customer Email:", order?.email);
+
       const imageEditable = getImageEditableFromOrder(order);
+      console.log("🖼 Image Editable:", imageEditable);
+
       if (imageEditable !== "editable") {
+        console.log("❌ Order not editable");
         return jsonResponse(
           {
             ok: false,
@@ -439,17 +474,24 @@ export const action = async ({ request }) => {
       }
 
       const updatedImageUrl = order?.updated_image?.value || null;
+
+      console.log("🖼 Updated Image URL:", updatedImageUrl);
+
       const partnerPayload = buildPartnerPayloadFromOrder(
         order,
         updatedImageUrl,
       );
 
-      // ✅ hardcoded URL (your requirement)
+      console.log("\n📤 Partner Payload:");
+      console.log(JSON.stringify(partnerPayload, null, 2));
+
       const partnerApiUrl =
         "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
 
       const PARTNER_API_KEY =
         "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
+
+      console.log("🌐 Partner API URL:", partnerApiUrl);
 
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 10000);
@@ -459,17 +501,24 @@ export const action = async ({ request }) => {
       let parsed = null;
 
       try {
+        console.log("🚀 Sending request to Partner API...");
+
         res = await fetch(partnerApiUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-API-Key": PARTNER_API_KEY, // ✅ send header too
+            "X-API-Key": PARTNER_API_KEY,
           },
           body: JSON.stringify(partnerPayload),
           signal: controller.signal,
         });
 
+        console.log("📡 Partner API Status:", res.status);
+
         text = await res.text().catch(() => "");
+
+        console.log("📨 Partner API Raw Response:", text);
+
         try {
           parsed = text ? JSON.parse(text) : null;
         } catch {
@@ -481,24 +530,12 @@ export const action = async ({ request }) => {
             ? "Partner request timeout"
             : String(err?.message || err);
 
+        console.log("❌ Partner API Error:", msg);
+
         return jsonResponse(
           {
             ok: false,
             error: msg,
-            debug: {
-              partnerApiUrl,
-              orderId,
-              orderName: order?.name,
-              updatedImageUrl,
-              payloadPreview: {
-                orderReferenceId: partnerPayload?.orderReferenceId,
-                items: partnerPayload?.items?.map((it) => ({
-                  productName: it.productName,
-                  quantity: it.quantity,
-                  files: it.files?.map((f) => ({ type: f.type, url: f.url })),
-                })),
-              },
-            },
           },
           { status: 400 },
         );
@@ -507,6 +544,9 @@ export const action = async ({ request }) => {
       }
 
       const statusValue = res.ok ? "sent" : "failed";
+
+      console.log("💾 Saving Partner Metafields...");
+      console.log("Partner Status:", statusValue);
 
       await admin.graphql(
         `#graphql
@@ -545,30 +585,21 @@ export const action = async ({ request }) => {
         },
       );
 
+      console.log("✅ Partner metafields saved");
+
       if (!res.ok) {
+        console.log("❌ Partner API failed");
+
         return jsonResponse(
           {
             ok: false,
             error: `Partner API failed (${res.status})`,
-            partner: { status: res.status, body: parsed || text || null },
-            debug: {
-              partnerApiUrl,
-              orderId,
-              orderName: order?.name,
-              updatedImageUrl,
-              payloadPreview: {
-                orderReferenceId: partnerPayload?.orderReferenceId,
-                items: partnerPayload?.items?.map((it) => ({
-                  productName: it.productName,
-                  quantity: it.quantity,
-                  files: it.files?.map((f) => ({ type: f.type, url: f.url })),
-                })),
-              },
-            },
           },
           { status: 400 },
         );
       }
+
+      console.log("🎉 Order successfully sent to Partner");
 
       return jsonResponse(
         {
@@ -580,12 +611,17 @@ export const action = async ({ request }) => {
       );
     }
 
+    console.log("❌ Unknown intent:", intent);
+
     return jsonResponse(
       { ok: false, error: "Unknown intent" },
       { status: 400 },
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+
+    console.log("🔥 ACTION ERROR:", msg);
+
     return jsonResponse({ ok: false, error: msg }, { status: 500 });
   }
 };

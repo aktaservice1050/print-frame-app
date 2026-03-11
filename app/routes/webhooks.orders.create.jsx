@@ -47,6 +47,8 @@ const getImageEditable = (body) => {
 const saveOrderMetafields = async (admin, orderGid, metafields = []) => {
   if (!admin || !orderGid || !metafields.length) return;
 
+  console.log("💾 Saving metafields on order:", orderGid);
+
   const response = await admin.graphql(
     `#graphql
       mutation updateOrderMetafields($input: OrderInput!) {
@@ -69,20 +71,28 @@ const saveOrderMetafields = async (admin, orderGid, metafields = []) => {
   const userErrors = result?.data?.orderUpdate?.userErrors || [];
 
   if (userErrors.length) {
+    console.error("❌ Metafield save error:", userErrors);
     throw new Error(userErrors[0].message || "Failed to save metafields");
   }
+
+  console.log("✅ Metafields saved successfully");
 };
 
 export const action = async ({ request }) => {
   let admin = null;
 
   try {
-    // ✅ webhook authentication + payload + admin client
+    console.log("📩 Webhook request received");
+
+    // webhook authentication + payload + admin client
     const webhook = await authenticate.webhook(request);
     admin = webhook.admin;
     const body = webhook.payload;
 
+    console.log("📦 Webhook payload:", JSON.stringify(body, null, 2));
+
     if (!body || typeof body !== "object") {
+      console.error("❌ Invalid webhook payload");
       return jsonResponse(
         { success: false, error: "Invalid webhook payload" },
         { status: 400 },
@@ -94,18 +104,28 @@ export const action = async ({ request }) => {
     const orderNumber = String(body.order_number || "");
     const customerEmail = body.email || null;
 
+    console.log("🧾 Order Info:", {
+      orderId,
+      orderGid,
+      orderNumber,
+      customerEmail,
+    });
+
     if (!orderId || !orderNumber) {
+      console.error("❌ Missing order id/order_number");
       return jsonResponse(
         { success: false, error: "Missing order id/order_number" },
         { status: 400 },
       );
     }
 
-    // ✅ check editable value
     const imageEditable = getImageEditable(body);
 
-    // editable -> save metafield + exit early
+    console.log("🖼 imageEditable value:", imageEditable);
+
     if (imageEditable === "editable") {
+      console.log("⚠️ Order marked editable → Not sending to partner");
+
       if (admin && orderGid) {
         await saveOrderMetafields(admin, orderGid, [
           {
@@ -139,7 +159,6 @@ export const action = async ({ request }) => {
       });
     }
 
-    // ---- Build partner payload ----
     const currencyMap = { BDT: "USD", INR: "USD", PKR: "USD" };
     const rawCurrency = body.currency || "USD";
     const validCurrency = currencyMap[rawCurrency] || rawCurrency;
@@ -150,6 +169,7 @@ export const action = async ({ request }) => {
       orderType: "order",
       orderReferenceId: orderNumber,
       customerReferenceId: "InkWorthy",
+      ProductName: "inkworthy_certificate",
       currency: validCurrency,
       preventDuplicate: true,
       items: lineItems.map((item) => {
@@ -275,12 +295,16 @@ export const action = async ({ request }) => {
         : null,
     };
 
+    console.log("📤 Partner API Payload:");
+    console.log(JSON.stringify(partnerPayload, null, 2));
+
     const partnerApiUrl =
       "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
 
     const PARTNER_API_KEY = "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
 
-    // ---- Send to Partner API ----
+    console.log("🚀 Sending order to Partner API...");
+
     const partnerResponse = await fetch(partnerApiUrl, {
       method: "POST",
       headers: {
@@ -290,13 +314,17 @@ export const action = async ({ request }) => {
       body: JSON.stringify(partnerPayload),
     });
 
+    console.log("📡 Partner API Status:", partnerResponse.status);
+
     const responseText = await partnerResponse.text().catch(() => "");
+
+    console.log("📨 Partner API Response:", responseText);
+
     const safePartnerApiResponse = JSON.stringify({
       status: partnerResponse.status,
       body: String(responseText || "").slice(0, 45000),
     });
 
-    // ✅ save metafields always
     if (admin && orderGid) {
       await saveOrderMetafields(admin, orderGid, [
         {
@@ -321,6 +349,8 @@ export const action = async ({ request }) => {
     }
 
     if (!partnerResponse.ok) {
+      console.error("❌ Partner API failed");
+
       return jsonResponse(
         {
           success: false,
@@ -331,6 +361,8 @@ export const action = async ({ request }) => {
       );
     }
 
+    console.log("✅ Order successfully sent to Partner API");
+
     return jsonResponse({
       success: true,
       message: "Order sent to partner",
@@ -339,6 +371,8 @@ export const action = async ({ request }) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
+    console.error("🔥 Webhook Error:", message);
 
     return jsonResponse({ success: false, error: message }, { status: 500 });
   }
