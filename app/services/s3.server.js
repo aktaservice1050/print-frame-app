@@ -28,7 +28,7 @@ export async function uploadToS3(file, folder = "uploads") {
       Key: fileName,
       Body: file.buffer,
       ContentType: file.mimetype,
-      ACL: "public-read",
+      // ACL: "public-read",
     };
 
     console.log("⬆️ Uploading to S3:", fileName);

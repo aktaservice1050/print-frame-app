@@ -1,238 +1,375 @@
-/* eslint-disable jsx-a11y/no-noninteractive-element-interactions */
-/* eslint-disable jsx-a11y/click-events-have-key-events */
-/* eslint-disable jsx-a11y/no-static-element-interactions */
+/* eslint-disable no-undef */
+/* eslint-disable react/prop-types */
+
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useEffect, useState } from "react";
-import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import React from "react";
+import {
+  Form,
+  useActionData,
+  useFetcher,
+  useLoaderData,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import { authenticate } from "../shopify.server";
+
+/** ✅ Convert id into Shopify GID if needed */
+const toOrderGid = (id) => {
+  if (!id) return "";
+  const str = String(id);
+  if (str.startsWith("gid://shopify/Order/")) return str;
+  if (/^\d+$/.test(str)) return `gid://shopify/Order/${str}`;
+  return str;
+};
+
+/** helper */
+const jsonResponse = (data, init = {}) =>
+  new Response(JSON.stringify(data), {
+    ...init,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...(init.headers || {}),
+    },
+  });
+
+/** ✅ get customAttribute by key (label-based; matches your screenshot) */
+const getAttr = (customAttributes = [], key) => {
+  const k = String(key || "")
+    .trim()
+    .toLowerCase();
+  const found = (customAttributes || []).find(
+    (a) =>
+      String(a?.key || "")
+        .trim()
+        .toLowerCase() === k,
+  );
+  return found ? found.value : null;
+};
+
+/** ✅ "Image Editable" is the key in your customAttributes (screenshot) */
+const getImageEditableFromOrder = (order) => {
+  const edges = order?.lineItems?.edges || [];
+  for (const e of edges) {
+    const attrs = e?.node?.customAttributes || [];
+    const v =
+      getAttr(attrs, "Image Editable") ||
+      getAttr(attrs, "image_editable") ||
+      getAttr(attrs, "editable");
+    if (v) return String(v).trim().toLowerCase();
+  }
+  return null;
+};
+
+/** ✅ "File URL" is the key in your customAttributes (screenshot) */
+const getFirstFileUrlFromLineItem = (lineItemNode) => {
+  const attrs = lineItemNode?.customAttributes || [];
+  const v =
+    getAttr(attrs, "File URL") ||
+    getAttr(attrs, "file_url") ||
+    getAttr(attrs, "File Url") ||
+    null;
+  return v ? String(v).trim() : null;
+};
+
+const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
+  const orderNumber =
+    String(order?.name || "")
+      .replace("#", "")
+      .trim() || "";
+  const customerEmail = order?.email || order?.customer?.email || null;
+
+  const rawCurrency = order?.totalPriceSet?.shopMoney?.currencyCode || "USD";
+  const currencyMap = { BDT: "USD", INR: "USD", PKR: "USD" };
+  const validCurrency = currencyMap[rawCurrency] || rawCurrency;
+
+  const shipping = order?.shippingAddress || null;
+  const lineEdges = order?.lineItems?.edges || [];
+
+  return {
+    orderType: "order",
+    orderReferenceId: orderNumber || String(order?.id || ""),
+    customerReferenceId: "InkWorthy",
+    ProductName: "inkworthy_certificate",
+    currency: validCurrency,
+    preventDuplicate: true,
+    items: lineEdges.map((edge) => {
+      const item = edge?.node || {};
+      const attrs = item.customAttributes || [];
+
+      let frameProperties = {
+        paper: "standard",
+        orientation: "portrait",
+        frameType: "classic",
+        frameColor: "wood grain",
+        matteType: "matting",
+        printType: "4×0",
+      };
+
+      (attrs || []).forEach((a) => {
+        const key = String(a?.key || "").toLowerCase();
+        const val = a?.value;
+
+        if (key.includes("paper")) frameProperties.paper = val;
+        if (key.includes("orientation")) frameProperties.orientation = val;
+        if (key.includes("frame") && key.includes("type"))
+          frameProperties.frameType = val;
+        if (key.includes("frame") && key.includes("style"))
+          frameProperties.frameColor = val;
+        if (key.includes("frame") && key.includes("color"))
+          frameProperties.frameColor = val;
+        if (key.includes("matte")) frameProperties.matteType = val;
+        if (key.includes("print")) frameProperties.printType = val;
+      });
+
+      const fileCandidates = (attrs || []).filter((a) => {
+        const k = String(a?.key || "").toLowerCase();
+        return k.includes("file url") || k.includes("certificate");
+      });
+
+      const uniqueFiles = [];
+      const seenTypes = new Set();
+
+      fileCandidates.forEach((a) => {
+        const url = String(a?.value || "");
+        const isValidUrl =
+          url &&
+          (url.startsWith("http://") ||
+            url.startsWith("https://") ||
+            url.startsWith("//"));
+        if (!isValidUrl) return;
+
+        const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
+
+        const baseType = String(a?.key || "")
+          .toLowerCase()
+          .includes("certificate")
+          ? "certificate"
+          : "default";
+
+        let counter = 1;
+        let uniqueType = baseType;
+        while (seenTypes.has(uniqueType))
+          uniqueType = `${baseType}_${counter++}`;
+
+        seenTypes.add(uniqueType);
+        uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
+      });
+
+      // ✅ override default file urls if edited image exists
+      if (updatedImageUrl) {
+        uniqueFiles.forEach((f) => {
+          const t = String(f.type || "").toLowerCase();
+          if (t.startsWith("default")) f.url = updatedImageUrl;
+        });
+      }
+
+      const metadata = (attrs || [])
+        .filter((a) => {
+          const k = String(a?.key || "").toLowerCase();
+          return !k.includes("file url") && !k.includes("certificate");
+        })
+        .map((a) => ({ key: a?.key, value: a?.value }));
+
+      return {
+        itemReferenceId:
+          item?.variant?.id?.toString() ||
+          item?.product?.id?.toString() ||
+          item?.id?.toString() ||
+          "",
+        productName: item.title || "",
+        productVariant: {
+          paper: frameProperties.paper,
+          orientation: frameProperties.orientation,
+          frameType: frameProperties.frameType,
+          frameColor: frameProperties.frameColor,
+          matteType: frameProperties.matteType,
+          print_type: frameProperties.printType,
+        },
+        files: uniqueFiles,
+        quantity: item.quantity || 1,
+        metadata,
+      };
+    }),
+    shipmentMethodId: "usps_ground_advantage",
+    shippingAddress: shipping
+      ? {
+          companyName: shipping.company || "",
+          firstName: shipping.firstName || "",
+          lastName: shipping.lastName || "",
+          addressLine1: shipping.address1 || "",
+          addressLine2: shipping.address2 || "",
+          city: shipping.city || "",
+          postcode: shipping.zip || "",
+          country: shipping.countryCodeV2 || "US",
+          email: customerEmail,
+          phone: shipping.phone || "",
+        }
+      : null,
+  };
+};
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
 
-  const orders = [];
-  let hasNextPage = true;
-  let endCursor = null;
+  const url = new URL(request.url);
+  const orderIdRaw = url.searchParams.get("orderId");
+  const orderId = orderIdRaw ? toOrderGid(orderIdRaw) : null;
 
-  while (hasNextPage) {
-    const response = await admin.graphql(
-      `#graphql
-        query getOrders($cursor: String) {
-          orders(first: 250, after: $cursor, reverse: true) {
-            edges {
-              cursor
-              node {
-                id
-                name
-                email
-                createdAt
-                displayFinancialStatus
-                displayFulfillmentStatus
-                totalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                subtotalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalDiscountsSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalShippingPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalTaxSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                customer {
+  const resp = await admin.graphql(
+    `#graphql
+    query OrdersForReview($first:Int!) {
+      orders(first: $first, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            email
+            createdAt
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress {
+              firstName lastName company address1 address2 city zip
+              countryCodeV2 phone
+            }
+            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+            partner_status: metafield(namespace: "custom", key: "partner_status") { value }
+            partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
+            lineItems(first: 25) {
+              edges {
+                node {
                   id
-                  firstName
-                  lastName
-                  email
-                  phone
-                }
-                shippingAddress {
-                  firstName
-                  lastName
-                  address1
-                  address2
-                  city
-                  province
-                  country
-                  zip
-                  phone
-                }
-                billingAddress {
-                  firstName
-                  lastName
-                  address1
-                  address2
-                  city
-                  province
-                  country
-                  zip
-                  phone
-                }
-                lineItems(first: 250) {
-                  edges {
-                    node {
-                      id
-                      title
-                      quantity
-                      originalUnitPriceSet {
-                        shopMoney {
-                          amount
-                          currencyCode
-                        }
-                      }
-                      discountedUnitPriceSet {
-                        shopMoney {
-                          amount
-                          currencyCode
-                        }
-                      }
-                      variant {
-                        id
-                        title
-                        sku
-                        price
-                      }
-                      product {
-                        id
-                        title
-                        handle
-                      }
-                      customAttributes {
-                        key
-                        value
-                      }
-                    }
-                  }
-                }
-                customAttributes {
-                  key
-                  value
-                }
-                metafields(first: 20) {
-                  edges {
-                    node {
-                      id
-                      namespace
-                      key
-                      value
-                    }
-                  }
-                }
-                note
-                tags
-                cancelledAt
-                cancelReason
-                fulfillments {
-                  id
-                  status
-                  createdAt
-                  trackingInfo {
-                    number
-                    url
-                    company
-                  }
-                }
-                transactions {
-                  id
-                  kind
-                  status
-                  amount
-                  gateway
+                  title
+                  quantity
+                  product { id }
+                  variant { id }
+                  customAttributes { key value }
                 }
               }
             }
-            pageInfo {
-              hasNextPage
-              endCursor
+          }
+        }
+      }
+    }`,
+    { variables: { first: 200 } },
+  );
+
+  const data = await resp.json();
+  const edges = data?.data?.orders?.edges || [];
+
+  const orders = edges.map((e) => {
+    const o = e.node;
+    const imageEditable = getImageEditableFromOrder(o);
+    return {
+      id: o.id,
+      name: o.name,
+      email: o.email,
+      createdAt: o.createdAt,
+      total: o.totalPriceSet?.shopMoney?.amount || null,
+      currency: o.totalPriceSet?.shopMoney?.currencyCode || null,
+      imageEditable,
+      partnerStatus: o?.partner_status?.value || null,
+      partnerApiStatus: o?.partner_api_status?.value || null,
+      updatedImage: o?.updated_image?.value || null,
+    };
+  });
+
+  let selectedOrder = null;
+  if (orderId) {
+    const r2 = await admin.graphql(
+      `#graphql
+      query OrderById($id: ID!) {
+        order(id: $id) {
+          id
+          name
+          email
+          createdAt
+          totalPriceSet { shopMoney { amount currencyCode } }
+          shippingAddress {
+            firstName lastName company address1 address2 city zip
+            countryCodeV2 phone
+          }
+          updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+          partner_status: metafield(namespace: "custom", key: "partner_status") { value }
+          partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
+          partner_api_response: metafield(namespace: "custom", key: "partner_api_response") { value }
+          lineItems(first: 25) {
+            edges {
+              node {
+                id
+                title
+                quantity
+                product { id }
+                variant { id }
+                customAttributes { key value }
+              }
             }
           }
-        }`,
-      {
-        variables: {
-          cursor: endCursor,
-        },
-      },
+        }
+      }`,
+      { variables: { id: orderId } },
     );
 
-    const json = await response.json();
-    const edges = json?.data?.orders?.edges || [];
-
-    orders.push(...edges.map((edge) => edge.node));
-
-    hasNextPage = json?.data?.orders?.pageInfo?.hasNextPage || false;
-    endCursor = json?.data?.orders?.pageInfo?.endCursor || null;
+    const j2 = await r2.json();
+    selectedOrder = j2?.data?.order || null;
   }
 
-  return {
-    orders,
-    totalOrders: orders.length,
-    shop: session.shop,
-    accessToken: session.accessToken,
-  };
+  return { orders, selectedOrder, orderId, shop: session.shop };
 };
 
 export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const actionType = formData.get("actionType");
+  console.log("\n========== ACTION TRIGGERED ==========");
+  console.log("⏰ Time:", new Date().toISOString());
 
-  if (actionType === "updateImage") {
-    const orderId = formData.get("orderId");
-    const imageUrl = formData.get("imageUrl");
+  try {
+    const { admin } = await authenticate.admin(request);
+    const form = await request.formData();
+    const intent = String(form.get("_intent") || "");
 
-    try {
+    console.log("📩 Intent received:", intent);
+
+    if (intent === "update_image_metafield") {
+      const shopifyOrderIdRaw = String(form.get("shopifyOrderId") || "");
+      const shopifyOrderId = toOrderGid(shopifyOrderIdRaw);
+      const imageUrl = String(form.get("imageUrl") || "");
+
+      console.log("🧾 Update Image Metafield Request");
+      console.log("Order Raw ID:", shopifyOrderIdRaw);
+      console.log("Order GID:", shopifyOrderId);
+      console.log("Image URL:", imageUrl);
+
+      if (!shopifyOrderId || !imageUrl) {
+        console.log("❌ Missing orderId or imageUrl");
+        return jsonResponse(
+          { ok: false, error: "Missing shopifyOrderId or imageUrl" },
+          { status: 400 },
+        );
+      }
+
+      console.log("🚀 Updating Shopify metafield...");
+
       const response = await admin.graphql(
         `#graphql
-          mutation updateOrderMetafield($input: OrderInput!) {
-            orderUpdate(input: $input) {
-              order {
-                id
-                metafields(first: 10) {
-                  edges {
-                    node {
-                      id
-                      namespace
-                      key
-                      value
-                    }
-                  }
-                }
-              }
-              userErrors {
-                field
-                message
-              }
-            }
-          }`,
+        mutation updateOrderMetafields($input: OrderInput!) {
+          orderUpdate(input: $input) {
+            order { id }
+            userErrors { field message }
+          }
+        }`,
         {
           variables: {
             input: {
-              id: orderId,
+              id: shopifyOrderId,
               metafields: [
                 {
                   namespace: "custom",
                   key: "updated_image",
                   value: imageUrl,
                   type: "url",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_status",
+                  value: "edited",
+                  type: "single_line_text_field",
                 },
               ],
             },
@@ -241,130 +378,291 @@ export const action = async ({ request }) => {
       );
 
       const result = await response.json();
+      console.log("📨 Shopify response:", JSON.stringify(result, null, 2));
 
-      if (result.data?.orderUpdate?.userErrors?.length > 0) {
-        return {
-          success: false,
-          error: result.data.orderUpdate.userErrors[0].message,
-        };
+      const userErrors = result?.data?.orderUpdate?.userErrors || [];
+      if (userErrors.length) {
+        console.log("❌ Shopify metafield error:", userErrors);
+        return jsonResponse(
+          { ok: false, error: userErrors[0].message },
+          { status: 400 },
+        );
       }
 
-      return { success: true, orderId, imageUrl };
-    } catch (error) {
-      return { success: false, error: error.message };
+      console.log("✅ Metafield updated successfully");
+
+      return jsonResponse({ ok: true, intent }, { status: 200 });
     }
-  }
 
-  return null;
-};
+    if (intent === "send_partner") {
+      const orderIdRaw = String(form.get("orderId") || "");
+      const orderId = toOrderGid(orderIdRaw);
 
-const getMetafieldValue = (order, namespace, key) => {
-  const found = order.metafields?.edges?.find(
-    (edge) => edge.node.namespace === namespace && edge.node.key === key,
-  );
+      console.log("\n🚀 Send Partner Request");
+      console.log("Order Raw ID:", orderIdRaw);
+      console.log("Order GID:", orderId);
 
-  return found?.node?.value || null;
-};
+      if (!orderId) {
+        console.log("❌ Missing orderId");
+        return jsonResponse(
+          { ok: false, error: "Missing orderId" },
+          { status: 400 },
+        );
+      }
 
-const getPartnerStatus = (order) =>
-  getMetafieldValue(order, "custom", "partner_status");
+      console.log("🔎 Fetching order from Shopify...");
 
-const getPartnerApiStatus = (order) =>
-  getMetafieldValue(order, "custom", "partner_api_status");
+      const r = await admin.graphql(
+        `#graphql
+        query OrderForPartner($id: ID!) {
+          order(id: $id) {
+            id
+            name
+            email
+            totalPriceSet { shopMoney { amount currencyCode } }
+            shippingAddress {
+              firstName lastName company address1 address2 city zip
+              countryCodeV2 phone
+            }
+            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+            lineItems(first: 25) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  product { id }
+                  variant { id }
+                  customAttributes { key value }
+                }
+              }
+            }
+          }
+        }`,
+        { variables: { id: orderId } },
+      );
 
-// Get image URL from metafield or custom attributes
-const getImageUrl = (order) => {
-  const metafieldImage = order.metafields?.edges?.find(
-    (edge) =>
-      edge.node.namespace === "custom" && edge.node.key === "updated_image",
-  );
+      const j = await r.json();
+      console.log("📦 Shopify Order Response:", JSON.stringify(j, null, 2));
 
-  if (metafieldImage) {
-    return { url: metafieldImage.node.value, isUpdated: true };
-  }
+      const order = j?.data?.order;
 
-  const firstLineItem = order.lineItems?.edges?.[0]?.node;
-  const fileUrlAttr = firstLineItem?.customAttributes?.find(
-    (attr) => attr.key === "File URL" || attr.key === "_file_url",
-  );
+      if (!order) {
+        console.log("❌ Order not found");
+        return jsonResponse(
+          { ok: false, error: "Order not found" },
+          { status: 404 },
+        );
+      }
 
-  return { url: fileUrlAttr?.value || null, isUpdated: false };
-};
+      console.log("🧾 Order Name:", order?.name);
+      console.log("📧 Customer Email:", order?.email);
 
-export default function Index() {
-  const { orders, totalOrders, shop } = useLoaderData();
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
+      const imageEditable = getImageEditableFromOrder(order);
+      console.log("🖼 Image Editable:", imageEditable);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [editModal, setEditModal] = useState({ open: false, order: null });
-  const [uploading, setUploading] = useState(false);
-  const [localImages, setLocalImages] = useState({});
+      if (imageEditable !== "editable") {
+        console.log("❌ Order not editable");
+        return jsonResponse(
+          {
+            ok: false,
+            error:
+              "This order is not editable (or missing “Image Editable”). It should be auto-sent by webhook.",
+          },
+          { status: 400 },
+        );
+      }
 
-  const itemsPerPage = 20;
-  const revalidator = useRevalidator();
+      const updatedImageUrl = order?.updated_image?.value || null;
 
-  useEffect(() => {
-    if (window.top === window.self) {
-      window.location.href = "/auth/login";
+      console.log("🖼 Updated Image URL:", updatedImageUrl);
+
+      const partnerPayload = buildPartnerPayloadFromOrder(
+        order,
+        updatedImageUrl,
+      );
+
+      console.log("\n📤 Partner Payload:");
+      console.log(JSON.stringify(partnerPayload, null, 2));
+
+      const partnerApiUrl =
+        "https://api.partner-connect.io/api/hud/6eb5f69f-9d04-4662-859b-0ad826660d5b/order";
+
+      const PARTNER_API_KEY =
+        "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
+
+      console.log("🌐 Partner API URL:", partnerApiUrl);
+
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 10000);
+
+      let res;
+      let text = "";
+      let parsed = null;
+
+      try {
+        console.log("🚀 Sending request to Partner API...");
+
+        res = await fetch(partnerApiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": PARTNER_API_KEY,
+          },
+          body: JSON.stringify(partnerPayload),
+          signal: controller.signal,
+        });
+
+        console.log("📡 Partner API Status:", res.status);
+
+        text = await res.text().catch(() => "");
+
+        console.log("📨 Partner API Raw Response:", text);
+
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = null;
+        }
+      } catch (err) {
+        const msg =
+          err?.name === "AbortError"
+            ? "Partner request timeout"
+            : String(err?.message || err);
+
+        console.log("❌ Partner API Error:", msg);
+
+        return jsonResponse(
+          {
+            ok: false,
+            error: msg,
+          },
+          { status: 400 },
+        );
+      } finally {
+        clearTimeout(t);
+      }
+
+      const statusValue = res.ok ? "sent" : "failed";
+
+      console.log("💾 Saving Partner Metafields...");
+      console.log("Partner Status:", statusValue);
+
+      await admin.graphql(
+        `#graphql
+        mutation savePartnerMetafields($input: OrderInput!) {
+          orderUpdate(input: $input) {
+            order { id }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            input: {
+              id: orderId,
+              metafields: [
+                {
+                  namespace: "custom",
+                  key: "partner_status",
+                  value: statusValue,
+                  type: "single_line_text_field",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_api_status",
+                  value: String(res.status),
+                  type: "number_integer",
+                },
+                {
+                  namespace: "custom",
+                  key: "partner_api_response",
+                  value: text ? text.slice(0, 50000) : "",
+                  type: "json",
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      console.log("✅ Partner metafields saved");
+
+      if (!res.ok) {
+        console.log("❌ Partner API failed");
+
+        return jsonResponse(
+          {
+            ok: false,
+            error: `Partner API failed (${res.status})`,
+          },
+          { status: 400 },
+        );
+      }
+
+      console.log("🎉 Order successfully sent to Partner");
+
+      return jsonResponse(
+        {
+          ok: true,
+          message: "Sent to partner",
+          partner: { status: res.status, body: parsed || text || null },
+        },
+        { status: 200 },
+      );
     }
-  }, []);
 
-  useEffect(() => {
-    if (totalOrders > 0) {
-      shopify.toast.show(`${totalOrders} orders loaded`);
-    }
-  }, [totalOrders, shopify]);
+    console.log("❌ Unknown intent:", intent);
 
-  useEffect(() => {
-    if (fetcher.data?.success) {
-      shopify.toast.show("Image updated successfully!");
-      setEditModal({ open: false, order: null });
-      revalidator.revalidate();
-    } else if (fetcher.data?.error) {
-      shopify.toast.show(`Error: ${fetcher.data.error}`);
-    }
-  }, [fetcher.data, revalidator, shopify]);
-
-  const filteredOrders = orders.filter((order) => {
-    const search = searchTerm.toLowerCase();
-
-    return (
-      order.name?.toLowerCase().includes(search) ||
-      order.email?.toLowerCase().includes(search) ||
-      order.customer?.firstName?.toLowerCase().includes(search) ||
-      order.customer?.lastName?.toLowerCase().includes(search) ||
-      order.shippingAddress?.city?.toLowerCase().includes(search) ||
-      getPartnerStatus(order)?.toLowerCase().includes(search) ||
-      getPartnerApiStatus(order)?.toLowerCase().includes(search)
+    return jsonResponse(
+      { ok: false, error: "Unknown intent" },
+      { status: 400 },
     );
-  });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
 
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedOrders = filteredOrders.slice(
-    startIndex,
-    startIndex + itemsPerPage,
-  );
+    console.log("🔥 ACTION ERROR:", msg);
+
+    return jsonResponse({ ok: false, error: msg }, { status: 500 });
+  }
+};
+
+function UploadAndSaveImage({
+  shop,
+  shopify,
+  fetcher,
+  inputId,
+  shopifyOrderId,
+  onPreview,
+  onSuccessMsg,
+  onErrorMsg,
+}) {
+  const fileRef = React.useRef(null);
+  const [uploading, setUploading] = React.useState(false);
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
       shopify.toast.show("Please select an image file");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      shopify.toast.show("File size must be less than 10MB");
+      e.target.value = "";
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      shopify.toast.show("File size must be less than 10MB");
+    if (!shopifyOrderId) {
+      const msg = "Missing Shopify Order GID (gid://shopify/Order/...)";
+      shopify.toast.show(msg);
+      onErrorMsg?.(msg);
+      e.target.value = "";
       return;
     }
 
     setUploading(true);
-
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -374,541 +672,577 @@ export default function Index() {
         method: "POST",
         body: formData,
       });
-
       const result = await response.json();
 
       if (result.success && result.fileUrl) {
-        setLocalImages((prev) => ({
-          ...prev,
-          [editModal.order.id]: result.fileUrl,
-        }));
+        onPreview?.(result.fileUrl);
+        const el = document.getElementById(inputId);
+        if (el) el.value = result.fileUrl;
 
-        const metafieldForm = new FormData();
-        metafieldForm.append("actionType", "updateImage");
-        metafieldForm.append("orderId", editModal.order.id);
-        metafieldForm.append("imageUrl", result.fileUrl);
+        const mf = new FormData();
+        mf.append("_intent", "update_image_metafield");
+        mf.append("shopifyOrderId", shopifyOrderId);
+        mf.append("imageUrl", result.fileUrl);
+        fetcher.submit(mf, { method: "POST" });
 
-        fetcher.submit(metafieldForm, { method: "POST" });
+        shopify.toast.show("✅ Image uploaded & saved!");
+        onSuccessMsg?.("✅ Image uploaded & saved!");
       } else {
-        shopify.toast.show(`Upload failed: ${result.error}`);
+        const msg = `Upload failed: ${result.error || "Unknown error"}`;
+        shopify.toast.show(msg);
+        onErrorMsg?.(msg);
       }
     } catch (error) {
-      shopify.toast.show(`Upload error: ${error.message}`);
+      const msg = `Upload error: ${error.message}`;
+      shopify.toast.show(msg);
+      onErrorMsg?.(msg);
     } finally {
       setUploading(false);
+      e.target.value = "";
     }
   };
 
-  const formatMoney = (amount, currency) =>
-    `${parseFloat(amount).toFixed(2)} ${currency}`;
-
-  const getStatusBadge = (status) => {
-    const colors = {
-      PAID: { bg: "#d4edda", color: "#155724" },
-      PENDING: { bg: "#fff3cd", color: "#856404" },
-      REFUNDED: { bg: "#f8d7da", color: "#721c24" },
-      FULFILLED: { bg: "#d4edda", color: "#155724" },
-      UNFULFILLED: { bg: "#fff3cd", color: "#856404" },
-      PARTIALLY_FULFILLED: { bg: "#d1ecf1", color: "#0c5460" },
-    };
-
-    const style = colors[status] || { bg: "#e2e3e5", color: "#383d41" };
-
-    return (
-      <span
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileUpload}
+        disabled={uploading}
+        style={{ display: "none" }}
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
         style={{
-          padding: "4px 8px",
-          borderRadius: "4px",
-          fontSize: "12px",
-          fontWeight: "500",
-          backgroundColor: style.bg,
-          color: style.color,
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: "1px solid #d1d5db",
+          background: "#fff",
+          fontWeight: 800,
+          cursor: uploading ? "not-allowed" : "pointer",
+          opacity: uploading ? 0.6 : 1,
+          whiteSpace: "nowrap",
         }}
       >
-        {status || "N/A"}
-      </span>
-    );
+        {uploading ? "Uploading..." : "Upload"}
+      </button>
+    </>
+  );
+}
+
+export default function Index() {
+  const { orders, selectedOrder, orderId, shop } = useLoaderData();
+  const actionData = useActionData();
+  const revalidator = useRevalidator();
+  const [sp, setSp] = useSearchParams();
+  const fetcher = useFetcher();
+  const shopify = useAppBridge();
+
+  const [uploadMsg, setUploadMsg] = React.useState("");
+  const [uploadErr, setUploadErr] = React.useState("");
+  const [previews, setPreviews] = React.useState({});
+
+  React.useEffect(() => {
+    if (actionData?.ok) revalidator.revalidate();
+  }, [actionData, revalidator]);
+
+  React.useEffect(() => {
+    if (!uploadMsg && !uploadErr) return;
+    const t = setTimeout(() => {
+      setUploadMsg("");
+      setUploadErr("");
+    }, 2600);
+    return () => clearTimeout(t);
+  }, [uploadMsg, uploadErr]);
+
+  const selectOrder = (gid) => {
+    const next = new URLSearchParams(sp);
+    next.set("orderId", gid);
+    setSp(next);
+    setUploadMsg("");
+    setUploadErr("");
+    setPreviews({});
   };
 
-  const getPartnerBadge = (status) => {
-    const normalized = String(status || "").toLowerCase();
-
-    const stylesByStatus = {
-      sent: { bg: "#d4edda", color: "#155724" },
-      failed: { bg: "#f8d7da", color: "#721c24" },
-      editable: { bg: "#fff3cd", color: "#856404" },
-      edited: { bg: "#d1ecf1", color: "#0c5460" },
-    };
-
-    const style = stylesByStatus[normalized] || {
-      bg: "#e2e3e5",
-      color: "#383d41",
-    };
-
-    return (
-      <span
-        style={{
-          padding: "4px 8px",
-          borderRadius: "4px",
-          fontSize: "12px",
-          fontWeight: "600",
-          backgroundColor: style.bg,
-          color: style.color,
-          textTransform: "capitalize",
-        }}
-      >
-        {status || "N/A"}
-      </span>
-    );
+  const clearSelection = () => {
+    const next = new URLSearchParams(sp);
+    next.delete("orderId");
+    setSp(next);
+    setUploadMsg("");
+    setUploadErr("");
+    setPreviews({});
   };
 
-  const styles = {
-    container: { padding: "20px", fontFamily: "Arial, sans-serif" },
-    header: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: "20px",
-      flexWrap: "wrap",
-      gap: "10px",
-    },
-    title: { margin: 0, fontSize: "24px" },
-    searchInput: {
-      padding: "10px 15px",
-      border: "1px solid #ddd",
-      borderRadius: "8px",
-      width: "300px",
-      fontSize: "14px",
-    },
-    tableWrapper: {
-      overflowX: "auto",
-      borderRadius: "8px",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-    },
-    table: {
-      width: "100%",
-      borderCollapse: "collapse",
-      backgroundColor: "#fff",
-      minWidth: "1200px",
-    },
-    th: {
-      padding: "12px",
-      textAlign: "left",
-      borderBottom: "2px solid #dee2e6",
-      fontWeight: "600",
-      fontSize: "13px",
-      whiteSpace: "nowrap",
-    },
-    td: {
-      padding: "12px",
-      borderBottom: "1px solid #dee2e6",
-      verticalAlign: "top",
-    },
-    imageContainer: { position: "relative", display: "inline-block" },
-    thumbnail: {
-      width: "60px",
-      height: "60px",
-      objectFit: "cover",
-      borderRadius: "6px",
-      cursor: "pointer",
-      border: "1px solid #ddd",
-    },
-    editBtn: {
-      position: "absolute",
-      bottom: "-5px",
-      right: "-5px",
-      width: "24px",
-      height: "24px",
-      borderRadius: "50%",
-      backgroundColor: "#007bff",
-      color: "#fff",
-      border: "none",
-      cursor: "pointer",
-      fontSize: "12px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    noImage: {
-      width: "60px",
-      height: "60px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "#f5f5f5",
-      borderRadius: "6px",
-      color: "#999",
-      fontSize: "10px",
-      cursor: "pointer",
-    },
-    updatedBadge: {
-      position: "absolute",
-      top: "-5px",
-      left: "-5px",
-      backgroundColor: "#28a745",
-      color: "#fff",
-      fontSize: "8px",
-      padding: "2px 4px",
-      borderRadius: "3px",
-    },
-    modal: {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: "rgba(0,0,0,0.8)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 1000,
-    },
-    modalContent: {
-      backgroundColor: "#fff",
-      padding: "30px",
-      borderRadius: "12px",
-      maxWidth: "500px",
-      width: "90%",
-      textAlign: "center",
-    },
-    modalImage: { maxWidth: "90%", maxHeight: "90%", borderRadius: "8px" },
-    closeBtn: {
-      position: "absolute",
-      top: "20px",
-      right: "20px",
-      color: "#fff",
-      fontSize: "30px",
-      cursor: "pointer",
-      background: "none",
-      border: "none",
-    },
-    uploadBtn: {
-      padding: "12px 24px",
-      backgroundColor: "#007bff",
-      color: "#fff",
-      border: "none",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "14px",
-      marginTop: "15px",
-    },
-    cancelBtn: {
-      padding: "12px 24px",
-      backgroundColor: "#6c757d",
-      color: "#fff",
-      border: "none",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "14px",
-      marginLeft: "10px",
-    },
-    pagination: {
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      gap: "10px",
-      marginTop: "20px",
-      flexWrap: "wrap",
-    },
-    pageBtn: {
-      padding: "8px 16px",
-      border: "1px solid #ddd",
-      borderRadius: "4px",
-      cursor: "pointer",
-      backgroundColor: "#fff",
-    },
-    pageBtnDisabled: {
-      padding: "8px 16px",
-      border: "1px solid #ddd",
-      borderRadius: "4px",
-      cursor: "not-allowed",
-      backgroundColor: "#f5f5f5",
-    },
-  };
+  const imageEditable = selectedOrder
+    ? getImageEditableFromOrder(selectedOrder)
+    : null;
+  const updatedImageUrl = selectedOrder?.updated_image?.value || null;
 
-  console.log("orders", orders);
-
+  const shopifyOrderId = toOrderGid(selectedOrder?.id);
+  const lineEdges = selectedOrder?.lineItems?.edges || [];
+  const canSend = !!selectedOrder && imageEditable === "editable";
+  console.log("first", orders);
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>📦 Orders ({totalOrders})</h1>
-        <input
-          type="text"
-          placeholder="🔍 Search orders..."
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
-          }}
-          style={styles.searchInput}
-        />
+        <div>
+          <h1 style={styles.title}>Order Review</h1>
+          <p style={styles.subtitle}>
+            Editable → upload/edit → Send to Partner | Not editable → webhook
+            auto send
+          </p>
+        </div>
+        <div style={styles.metaRight}>
+          <span style={styles.countPill}>Total: {orders?.length ?? 0}</span>
+        </div>
       </div>
 
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr style={{ backgroundColor: "#f8f9fa" }}>
-              {[
-                "Image",
-                "Order",
-                "Customer",
-                "Items",
-                "Total",
-                "Partner",
-                "Payment",
-                "Delivery",
-              ].map((h) => (
-                <th key={h} style={styles.th}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedOrders.map((order, index) => {
-              const imageData = getImageUrl(order);
-              const displayUrl = localImages[order.id] || imageData.url;
-              const isUpdated = !!localImages[order.id] || imageData.isUpdated;
-              const partnerStatus = getPartnerStatus(order);
-              // const partnerApiStatus = getPartnerApiStatus(order);
+      {actionData?.ok === false && actionData?.error && (
+        <div style={styles.alertError}>{actionData.error}</div>
+      )}
+      {actionData?.ok === true && <div style={styles.alertOk}>Saved ✅</div>}
 
-              return (
-                <tr
-                  key={order.id}
-                  style={{
-                    backgroundColor: index % 2 === 0 ? "#fff" : "#f8f9fa",
-                  }}
-                >
-                  <td style={styles.td}>
-                    <div style={styles.imageContainer}>
-                      {isUpdated && (
-                        <span style={styles.updatedBadge}>Updated</span>
-                      )}
-                      {displayUrl ? (
-                        <>
-                          <img
-                            src={displayUrl}
-                            alt="Product"
-                            style={styles.thumbnail}
-                            onClick={() => setSelectedImage(displayUrl)}
-                            onError={(e) => {
-                              e.target.style.display = "none";
-                            }}
-                          />
-                          <button
-                            style={styles.editBtn}
-                            onClick={() => setEditModal({ open: true, order })}
-                            title="Edit Image"
-                          >
-                            ✎
-                          </button>
-                        </>
-                      ) : (
-                        <div
-                          style={styles.noImage}
-                          onClick={() => setEditModal({ open: true, order })}
-                        >
-                          + Add
-                        </div>
-                      )}
-                    </div>
-                  </td>
+      {uploadErr && <div style={styles.alertError}>{uploadErr}</div>}
+      {uploadMsg && <div style={styles.alertOk}>{uploadMsg}</div>}
 
-                  <td style={styles.td}>
-                    <strong style={{ color: "#007bff" }}>{order.name}</strong>
-                    <br />
-                    <small style={{ color: "#6c757d" }}>
-                      {order.email || "N/A"}
-                    </small>
-                  </td>
-
-                  <td style={styles.td}>
-                    <strong>
-                      {order.customer
-                        ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`
-                        : "Guest"}
-                    </strong>
-                    <br />
-                    <small style={{ color: "#6c757d" }}>
-                      {order.customer?.phone ||
-                        order.shippingAddress?.phone ||
-                        "N/A"}
-                    </small>
-                  </td>
-
-                  <td style={styles.td}>
-                    {order.lineItems.edges.slice(0, 2).map((item, i) => (
-                      <div
-                        key={i}
-                        style={{ fontSize: "12px", marginBottom: "4px" }}
-                      >
-                        • {item.node.title} (x{item.node.quantity})
-                      </div>
-                    ))}
-                    {order.lineItems.edges.length > 2 && (
-                      <small style={{ color: "#007bff" }}>
-                        +{order.lineItems.edges.length - 2} more
-                      </small>
-                    )}
-                  </td>
-
-                  <td style={styles.td}>
-                    <strong>
-                      {formatMoney(
-                        order.totalPriceSet.shopMoney.amount,
-                        order.totalPriceSet.shopMoney.currencyCode,
-                      )}
-                    </strong>
-                  </td>
-
-                  <td style={styles.td}>
-                    {partnerStatus ? (
-                      getPartnerBadge(partnerStatus)
-                    ) : (
-                      <span style={{ color: "#6c757d" }}>-</span>
-                    )}
-                  </td>
-
-                  {/* <td style={styles.td}>
-                    {partnerApiStatus ? (
-                      <strong>{partnerApiStatus}</strong>
-                    ) : (
-                      <span style={{ color: "#6c757d" }}>-</span>
-                    )}
-                  </td> */}
-
-                  <td style={styles.td}>
-                    {getStatusBadge(order.displayFinancialStatus)}
-                  </td>
-
-                  <td style={styles.td}>
-                    {getStatusBadge(order.displayFulfillmentStatus)}
-                  </td>
+      <div style={styles.grid}>
+        <div style={styles.card}>
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.theadRow}>
+                  {[
+                    "Pick",
+                    "Type",
+                    "Order #",
+                    "Email",
+                    "Partner",
+                    "Created",
+                  ].map((h) => (
+                    <th key={h} style={styles.th}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {(orders || [])
+                  .filter((o) => o.imageEditable !== "not_editable")
+                  .filter((o) => o.partnerStatus !== "sent")
+                  .map((o, idx) => {
+                    const type =
+                      o.imageEditable === "not_editable"
+                        ? "auto/direct"
+                        : "editable";
+                    const p = o.partnerStatus || "-";
+                    return (
+                      <tr
+                        key={o.id}
+                        style={{
+                          backgroundColor: idx % 2 === 0 ? "#fff" : "#f9fafb",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => selectOrder(o.id)}
+                      >
+                        <td style={styles.td}>
+                          <input
+                            type="radio"
+                            checked={orderId === o.id}
+                            onChange={() => selectOrder(o.id)}
+                          />
+                        </td>
+                        <td style={styles.td}>
+                          <span
+                            style={badge(
+                              type === "editable" ? "editable" : "auto",
+                            )}
+                          >
+                            {type}
+                          </span>
+                        </td>
+                        <td style={styles.tdStrong}>{o.name || "-"}</td>
+                        <td style={styles.tdMuted}>{o.email || "-"}</td>
+                        <td style={styles.tdMuted}>{p}</td>
+                        <td style={styles.tdMuted}>
+                          {o.createdAt
+                            ? new Date(o.createdAt).toLocaleString()
+                            : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
 
-      {totalPages > 1 && (
-        <div style={styles.pagination}>
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            style={currentPage === 1 ? styles.pageBtnDisabled : styles.pageBtn}
-          >
-            ← Previous
-          </button>
-          <span style={{ padding: "8px 16px" }}>
-            Page {currentPage} / {totalPages} (Total {filteredOrders.length}{" "}
-            orders)
-          </span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            style={
-              currentPage === totalPages
-                ? styles.pageBtnDisabled
-                : styles.pageBtn
-            }
-          >
-            Next →
-          </button>
-        </div>
-      )}
-
-      {filteredOrders.length === 0 && (
-        <div style={{ textAlign: "center", padding: "40px", color: "#6c757d" }}>
-          No orders found
-        </div>
-      )}
-
-      {selectedImage && (
-        <div style={styles.modal} onClick={() => setSelectedImage(null)}>
-          <button
-            style={styles.closeBtn}
-            onClick={() => setSelectedImage(null)}
-          >
-            ×
-          </button>
-          <img src={selectedImage} alt="Full view" style={styles.modalImage} />
-        </div>
-      )}
-
-      {editModal.open && (
-        <div
-          style={styles.modal}
-          onClick={() =>
-            !uploading && setEditModal({ open: false, order: null })
-          }
-        >
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0 }}>📷 Update Image</h2>
-            <p style={{ color: "#6c757d" }}>
-              Order: <strong>{editModal.order?.name}</strong>
-            </p>
-
-            {(localImages[editModal.order?.id] ||
-              getImageUrl(editModal.order).url) && (
-              <div style={{ marginBottom: "20px" }}>
-                <p style={{ fontSize: "14px", color: "#666" }}>
-                  Current Image:
-                </p>
-                <img
-                  src={
-                    localImages[editModal.order?.id] ||
-                    getImageUrl(editModal.order).url
-                  }
-                  alt="Current"
-                  style={{
-                    maxWidth: "200px",
-                    maxHeight: "200px",
-                    borderRadius: "8px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
-            )}
-
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              style={{ display: "none" }}
-              id="imageUpload"
-            />
-            <label
-              htmlFor="imageUpload"
-              style={{
-                ...styles.uploadBtn,
-                display: "inline-block",
-                opacity: uploading ? 0.6 : 1,
-              }}
-            >
-              {uploading ? "⏳ Uploading..." : "📤 Select New Image"}
-            </label>
-            <button
-              style={styles.cancelBtn}
-              onClick={() => setEditModal({ open: false, order: null })}
-              disabled={uploading}
-            >
-              Cancel
-            </button>
-
-            {uploading && (
-              <div style={{ marginTop: "15px", color: "#007bff" }}>
-                Uploading to S3 and saving to Shopify...
-              </div>
-            )}
+                {(orders?.length ?? 0) === 0 && (
+                  <tr>
+                    <td style={{ padding: 18 }} colSpan={6}>
+                      No orders.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
+
+        <div style={styles.detailCard}>
+          {!selectedOrder ? (
+            <div style={{ padding: 16, opacity: 0.8 }}>
+              Select an order to review.
+            </div>
+          ) : (
+            <div style={{ padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h2 style={{ margin: 0, fontSize: 18 }}>
+                  {selectedOrder.name}
+                </h2>
+
+                <span style={badge(canSend ? "editable" : "auto")}>
+                  {imageEditable === "editable" ? "editable" : "auto/direct"}
+                </span>
+
+                <button type="button" onClick={clearSelection} style={tinyBtn}>
+                  Clear
+                </button>
+              </div>
+
+              <div style={{ height: 10 }} />
+
+              {!canSend && (
+                <div style={styles.alertError}>
+                  This order is <b>not_editable</b> (or missing “Image
+                  Editable”). Webhook should auto-send it. This page is mainly
+                  for editable orders.
+                </div>
+              )}
+
+              <div style={{ ...card, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                  Updated Image (Metafield)
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.8 }}>
+                  Metafield: <b>custom.updated_image</b>
+                </div>
+                <div style={{ height: 10 }} />
+                {updatedImageUrl ? (
+                  <div style={previewWrap}>
+                    <img
+                      src={updatedImageUrl}
+                      alt="updated preview"
+                      style={previewImg}
+                      onClick={() => window.open(updatedImageUrl, "_blank")}
+                    />
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>
+                      Click preview
+                    </div>
+                  </div>
+                ) : (
+                  <div style={previewPlaceholder}>No updated image yet</div>
+                )}
+              </div>
+
+              <Form method="post">
+                <input type="hidden" name="orderId" value={selectedOrder.id} />
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  {lineEdges.map((edge, idx) => {
+                    const it = edge.node;
+                    const key = `${idx}`;
+                    const original = getFirstFileUrlFromLineItem(it);
+                    const previewUrl =
+                      previews[key] || updatedImageUrl || original || "";
+
+                    return (
+                      <div key={it.id} style={card}>
+                        <div style={{ fontWeight: 800 }}>
+                          {it.title || `Item ${idx + 1}`}
+                        </div>
+                        <div style={{ opacity: 0.8, marginTop: 4 }}>
+                          Qty: {it.quantity || 1}
+                        </div>
+
+                        <div style={{ height: 10 }} />
+
+                        <div style={fileBlock}>
+                          {previewUrl ? (
+                            <div style={previewWrap}>
+                              <img
+                                src={previewUrl}
+                                alt="preview"
+                                style={previewImg}
+                                onClick={() =>
+                                  window.open(previewUrl, "_blank")
+                                }
+                              />
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Preview (updated_image first)
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={previewPlaceholder}>No preview</div>
+                          )}
+
+                          <label style={label}>
+                            Set updated image (custom.updated_image)
+                          </label>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              id={`url-${idx}`}
+                              defaultValue={updatedImageUrl || ""}
+                              placeholder="https://... (saved as custom.updated_image)"
+                              style={input}
+                              onChange={(e) =>
+                                setPreviews((p) => ({
+                                  ...p,
+                                  [key]: e.target.value,
+                                }))
+                              }
+                            />
+
+                            <UploadAndSaveImage
+                              shop={shop}
+                              shopify={shopify}
+                              fetcher={fetcher}
+                              inputId={`url-${idx}`}
+                              shopifyOrderId={shopifyOrderId}
+                              onPreview={(url) =>
+                                setPreviews((p) => ({ ...p, [key]: url }))
+                              }
+                              onSuccessMsg={(m) => {
+                                setUploadErr("");
+                                setUploadMsg(m);
+                              }}
+                              onErrorMsg={(m) => {
+                                setUploadMsg("");
+                                setUploadErr(m);
+                              }}
+                            />
+                          </div>
+
+                          <div
+                            style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
+                          >
+                            Original File URL: {original || "—"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="submit"
+                      name="_intent"
+                      value="send_partner"
+                      style={{
+                        ...dangerBtn,
+                        opacity: canSend ? 1 : 0.5,
+                        cursor: canSend ? "pointer" : "not-allowed",
+                      }}
+                      disabled={!canSend}
+                    >
+                      Send to Partner
+                    </button>
+                  </div>
+                </div>
+              </Form>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-export const headers = (headersArgs) => {
-  return boundary.headers(headersArgs);
+/** styles */
+const styles = {
+  container: { padding: 20, fontFamily: "system-ui", color: "#111827" },
+  alertError: {
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#991b1b",
+    fontWeight: 700,
+    marginBottom: 12,
+  },
+  alertOk: {
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #bbf7d0",
+    background: "#f0fdf4",
+    color: "#166534",
+    fontWeight: 700,
+    marginBottom: 12,
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+    marginBottom: 14,
+  },
+  title: { margin: 0, fontSize: 24 },
+  subtitle: { margin: "6px 0 0", opacity: 0.8 },
+  metaRight: { display: "flex", alignItems: "center", gap: 10 },
+  countPill: {
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    background: "#eef2ff",
+    color: "#3730a3",
+    border: "1px solid #e5e7eb",
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 1fr",
+    gap: 14,
+    alignItems: "start",
+  },
+  card: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    overflow: "hidden",
+    background: "#fff",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+  },
+  detailCard: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    background: "#fff",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+    overflow: "hidden",
+  },
+  tableWrapper: { overflowX: "auto" },
+  table: { width: "100%", borderCollapse: "collapse" },
+  theadRow: { background: "#f9fafb" },
+  th: {
+    textAlign: "left",
+    padding: "12px 14px",
+    borderBottom: "2px solid #e5e7eb",
+    fontSize: 12,
+    textTransform: "uppercase",
+    color: "#374151",
+    whiteSpace: "nowrap",
+  },
+  td: {
+    padding: "12px 14px",
+    borderBottom: "1px solid #e5e7eb",
+    fontSize: 14,
+    whiteSpace: "nowrap",
+  },
+  tdStrong: {
+    padding: "12px 14px",
+    borderBottom: "1px solid #e5e7eb",
+    fontSize: 14,
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+  tdMuted: {
+    padding: "12px 14px",
+    borderBottom: "1px solid #e5e7eb",
+    fontSize: 14,
+    color: "#6b7280",
+    whiteSpace: "nowrap",
+  },
+};
+
+const card = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 12,
+  background: "#fff",
+  padding: 14,
+};
+const label = {
+  display: "block",
+  fontSize: 13,
+  fontWeight: 700,
+  marginBottom: 6,
+};
+const input = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #d1d5db",
+  fontSize: 14,
+};
+const dangerBtn = {
+  background: "#dc2626",
+  color: "#fff",
+  border: "1px solid #dc2626",
+  borderRadius: 10,
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+const tinyBtn = {
+  marginLeft: "auto",
+  border: "1px solid #e5e7eb",
+  background: "#fff",
+  borderRadius: 10,
+  padding: "6px 10px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const fileBlock = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 12,
+  padding: 12,
+  background: "#fafafa",
+};
+const previewWrap = {
+  marginBottom: 10,
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+};
+const previewImg = {
+  width: 72,
+  height: 72,
+  objectFit: "cover",
+  borderRadius: 10,
+  border: "1px solid #ddd",
+  cursor: "pointer",
+  background: "#fff",
+};
+const previewPlaceholder = {
+  marginBottom: 10,
+  width: 72,
+  height: 72,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 10,
+  border: "1px dashed #cbd5e1",
+  color: "#64748b",
+  background: "#fff",
+  fontSize: 12,
+};
+
+const badge = (status) => {
+  const base = {
+    display: "inline-block",
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: "capitalize",
+  };
+  if (status === "editable")
+    return { ...base, background: "#dbeafe", color: "#1e40af" };
+  if (status === "auto")
+    return { ...base, background: "#dcfce7", color: "#166534" };
+  return { ...base, background: "#e5e7eb", color: "#111827" };
 };

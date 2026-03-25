@@ -34,7 +34,7 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey} host={host}>
       <s-app-nav>
-        <s-link href={`/app${location.search}`}>Orders</s-link>
+        {/* <s-link href={`/app${location.search}`}>Orders</s-link> */}
         <s-link href={`/app/orderlist${location.search}`}>
           Order and review
         </s-link>
