@@ -71,7 +71,17 @@ const getFirstFileUrlFromLineItem = (lineItemNode) => {
   return v ? String(v).trim() : null;
 };
 
-const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
+// ✅ Build updated images map from order metafields (per line item index)
+const buildUpdatedImagesMap = (order) => {
+  const map = {};
+  for (let i = 0; i < 25; i++) {
+    const val = order?.[`updated_image_${i}`]?.value;
+    if (val) map[i] = val;
+  }
+  return map;
+};
+
+const buildPartnerPayloadFromOrder = (order, updatedImagesMap) => {
   const orderNumber =
     String(order?.name || "")
       .replace("#", "")
@@ -92,9 +102,12 @@ const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
     ProductName: "inkworthy_certificate",
     currency: validCurrency,
     preventDuplicate: true,
-    items: lineEdges.map((edge) => {
+    items: lineEdges.map((edge, idx) => {
       const item = edge?.node || {};
       const attrs = item.customAttributes || [];
+
+      // ✅ Per-item updated image URL
+      const updatedImageUrl = updatedImagesMap?.[idx] || null;
 
       let frameProperties = {
         paper: "standard",
@@ -155,7 +168,7 @@ const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
         uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
       });
 
-      // ✅ override default file urls if edited image exists
+      // ✅ override file url only for this specific item's updated image
       if (updatedImageUrl) {
         uniqueFiles.forEach((f) => {
           const t = String(f.type || "").toLowerCase();
@@ -208,6 +221,15 @@ const buildPartnerPayloadFromOrder = (order, updatedImageUrl) => {
   };
 };
 
+// ✅ Build per-item metafield fragment (supports up to 25 line items)
+const buildUpdatedImageMetafields = () => {
+  return Array.from(
+    { length: 25 },
+    (_, i) =>
+      `updated_image_${i}: metafield(namespace: "custom", key: "updated_image_${i}") { value }`,
+  ).join("\n");
+};
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
 
@@ -230,7 +252,6 @@ export const loader = async ({ request }) => {
               firstName lastName company address1 address2 city zip
               countryCodeV2 phone
             }
-            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
             partner_status: metafield(namespace: "custom", key: "partner_status") { value }
             partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
             lineItems(first: 25) {
@@ -268,7 +289,6 @@ export const loader = async ({ request }) => {
       imageEditable,
       partnerStatus: o?.partner_status?.value || null,
       partnerApiStatus: o?.partner_api_status?.value || null,
-      updatedImage: o?.updated_image?.value || null,
     };
   });
 
@@ -287,10 +307,10 @@ export const loader = async ({ request }) => {
             firstName lastName company address1 address2 city zip
             countryCodeV2 phone
           }
-          updated_image: metafield(namespace: "custom", key: "updated_image") { value }
           partner_status: metafield(namespace: "custom", key: "partner_status") { value }
           partner_api_status: metafield(namespace: "custom", key: "partner_api_status") { value }
           partner_api_response: metafield(namespace: "custom", key: "partner_api_response") { value }
+          ${buildUpdatedImageMetafields()}
           lineItems(first: 25) {
             edges {
               node {
@@ -330,11 +350,16 @@ export const action = async ({ request }) => {
       const shopifyOrderIdRaw = String(form.get("shopifyOrderId") || "");
       const shopifyOrderId = toOrderGid(shopifyOrderIdRaw);
       const imageUrl = String(form.get("imageUrl") || "");
+      // ✅ Per-item index
+      const lineItemIndex = String(form.get("lineItemIndex") || "0");
+      const metafieldKey = `updated_image_${lineItemIndex}`;
 
       console.log("🧾 Update Image Metafield Request");
       console.log("Order Raw ID:", shopifyOrderIdRaw);
       console.log("Order GID:", shopifyOrderId);
       console.log("Image URL:", imageUrl);
+      console.log("Line Item Index:", lineItemIndex);
+      console.log("Metafield Key:", metafieldKey);
 
       if (!shopifyOrderId || !imageUrl) {
         console.log("❌ Missing orderId or imageUrl");
@@ -361,7 +386,8 @@ export const action = async ({ request }) => {
               metafields: [
                 {
                   namespace: "custom",
-                  key: "updated_image",
+                  // ✅ Save as updated_image_0, updated_image_1, etc.
+                  key: metafieldKey,
                   value: imageUrl,
                   type: "url",
                 },
@@ -424,7 +450,7 @@ export const action = async ({ request }) => {
               firstName lastName company address1 address2 city zip
               countryCodeV2 phone
             }
-            updated_image: metafield(namespace: "custom", key: "updated_image") { value }
+            ${buildUpdatedImageMetafields()}
             lineItems(first: 25) {
               edges {
                 node {
@@ -467,19 +493,19 @@ export const action = async ({ request }) => {
           {
             ok: false,
             error:
-              "This order is not editable (or missing “Image Editable”). It should be auto-sent by webhook.",
+              'This order is not editable (or missing "Image Editable"). It should be auto-sent by webhook.',
           },
           { status: 400 },
         );
       }
 
-      const updatedImageUrl = order?.updated_image?.value || null;
-
-      console.log("🖼 Updated Image URL:", updatedImageUrl);
+      // ✅ Build per-item updated images map
+      const updatedImagesMap = buildUpdatedImagesMap(order);
+      console.log("🖼 Updated Images Map:", updatedImagesMap);
 
       const partnerPayload = buildPartnerPayloadFromOrder(
         order,
-        updatedImageUrl,
+        updatedImagesMap,
       );
 
       console.log("\n📤 Partner Payload:");
@@ -611,6 +637,49 @@ export const action = async ({ request }) => {
       );
     }
 
+    if (intent === "reject_order") {
+      const orderIdRaw = String(form.get("orderId") || "");
+      const orderId = toOrderGid(orderIdRaw);
+
+      console.log("\n🚫 Reject Order Request");
+      console.log("Order GID:", orderId);
+
+      if (!orderId) {
+        return jsonResponse(
+          { ok: false, error: "Missing orderId" },
+          { status: 400 },
+        );
+      }
+
+      await admin.graphql(
+        `#graphql
+        mutation rejectOrder($input: OrderInput!) {
+          orderUpdate(input: $input) {
+            order { id }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            input: {
+              id: orderId,
+              metafields: [
+                {
+                  namespace: "custom",
+                  key: "partner_status",
+                  value: "rejected",
+                  type: "single_line_text_field",
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      console.log("✅ Order rejected");
+      return jsonResponse({ ok: true, intent }, { status: 200 });
+    }
+
     console.log("❌ Unknown intent:", intent);
 
     return jsonResponse(
@@ -632,6 +701,7 @@ function UploadAndSaveImage({
   fetcher,
   inputId,
   shopifyOrderId,
+  lineItemIndex, // ✅ NEW prop
   onPreview,
   onSuccessMsg,
   onErrorMsg,
@@ -683,6 +753,8 @@ function UploadAndSaveImage({
         mf.append("_intent", "update_image_metafield");
         mf.append("shopifyOrderId", shopifyOrderId);
         mf.append("imageUrl", result.fileUrl);
+        // ✅ Send line item index so each item gets its own metafield
+        mf.append("lineItemIndex", String(lineItemIndex ?? 0));
         fetcher.submit(mf, { method: "POST" });
 
         shopify.toast.show("✅ Image uploaded & saved!");
@@ -779,11 +851,16 @@ export default function OrderReviewSinglePage() {
   const imageEditable = selectedOrder
     ? getImageEditableFromOrder(selectedOrder)
     : null;
-  const updatedImageUrl = selectedOrder?.updated_image?.value || null;
 
   const shopifyOrderId = toOrderGid(selectedOrder?.id);
   const lineEdges = selectedOrder?.lineItems?.edges || [];
-  const canSend = !!selectedOrder && imageEditable === "editable";
+  const canSend = !!selectedOrder;
+
+  // ✅ Get updated image URL for a specific line item index
+  const getUpdatedImageForIndex = (idx) => {
+    return selectedOrder?.[`updated_image_${idx}`]?.value || null;
+  };
+
   console.log("first", orders);
   return (
     <div style={styles.container}>
@@ -830,13 +907,10 @@ export default function OrderReviewSinglePage() {
               </thead>
               <tbody>
                 {(orders || [])
-                  .filter((o) => o.imageEditable !== "not_editable")
                   .filter((o) => o.partnerStatus !== "sent")
+                  .filter((o) => o.partnerStatus !== "rejected")
                   .map((o, idx) => {
-                    const type =
-                      o.imageEditable === "not_editable"
-                        ? "auto/direct"
-                        : "editable";
+                    const type = "editable";
                     const p = o.partnerStatus || "-";
                     return (
                       <tr
@@ -899,9 +973,7 @@ export default function OrderReviewSinglePage() {
                   {selectedOrder.name}
                 </h2>
 
-                <span style={badge(canSend ? "editable" : "auto")}>
-                  {imageEditable === "editable" ? "editable" : "auto/direct"}
-                </span>
+                <span style={badge("editable")}>editable</span>
 
                 <button type="button" onClick={clearSelection} style={tinyBtn}>
                   Clear
@@ -910,37 +982,51 @@ export default function OrderReviewSinglePage() {
 
               <div style={{ height: 10 }} />
 
-              {!canSend && (
-                <div style={styles.alertError}>
-                  This order is <b>not_editable</b> (or missing “Image
-                  Editable”). Webhook should auto-send it. This page is mainly
-                  for editable orders.
-                </div>
-              )}
-
+              {/* ✅ Updated Image section now shows all per-item metafields */}
               <div style={{ ...card, padding: 12, marginBottom: 12 }}>
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                  Updated Image (Metafield)
+                  Updated Images (Per Item Metafields)
                 </div>
                 <div style={{ fontSize: 13, opacity: 0.8 }}>
-                  Metafield: <b>custom.updated_image</b>
+                  Metafields: <b>custom.updated_image_0</b>,{" "}
+                  <b>custom.updated_image_1</b>, ...
                 </div>
                 <div style={{ height: 10 }} />
-                {updatedImageUrl ? (
-                  <div style={previewWrap}>
-                    <img
-                      src={updatedImageUrl}
-                      alt="updated preview"
-                      style={previewImg}
-                      onClick={() => window.open(updatedImageUrl, "_blank")}
-                    />
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      Click preview
-                    </div>
-                  </div>
-                ) : (
-                  <div style={previewPlaceholder}>No updated image yet</div>
-                )}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {lineEdges.map((edge, idx) => {
+                    const itemUpdatedImage = getUpdatedImageForIndex(idx);
+                    return (
+                      <div key={idx} style={{ textAlign: "center" }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            opacity: 0.7,
+                            marginBottom: 4,
+                          }}
+                        >
+                          Item {idx + 1}
+                        </div>
+                        {itemUpdatedImage ? (
+                          <div style={previewWrap}>
+                            <img
+                              src={itemUpdatedImage}
+                              alt={`updated preview item ${idx + 1}`}
+                              style={previewImg}
+                              onClick={() =>
+                                window.open(itemUpdatedImage, "_blank")
+                              }
+                            />
+                            <div style={{ fontSize: 12, opacity: 0.75 }}>
+                              Click preview
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={previewPlaceholder}>No image</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <Form method="post">
@@ -951,8 +1037,10 @@ export default function OrderReviewSinglePage() {
                     const it = edge.node;
                     const key = `${idx}`;
                     const original = getFirstFileUrlFromLineItem(it);
+                    // ✅ Each item uses its own metafield for preview
+                    const itemUpdatedImage = getUpdatedImageForIndex(idx);
                     const previewUrl =
-                      previews[key] || updatedImageUrl || original || "";
+                      previews[key] || itemUpdatedImage || original || "";
 
                     return (
                       <div key={it.id} style={card}>
@@ -977,7 +1065,7 @@ export default function OrderReviewSinglePage() {
                                 }
                               />
                               <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                Preview (updated_image first)
+                                Preview (updated_image_{idx} first)
                               </div>
                             </div>
                           ) : (
@@ -985,7 +1073,7 @@ export default function OrderReviewSinglePage() {
                           )}
 
                           <label style={label}>
-                            Set updated image (custom.updated_image)
+                            Set updated image (custom.updated_image_{idx})
                           </label>
 
                           <div
@@ -997,8 +1085,8 @@ export default function OrderReviewSinglePage() {
                           >
                             <input
                               id={`url-${idx}`}
-                              defaultValue={updatedImageUrl || ""}
-                              placeholder="https://... (saved as custom.updated_image)"
+                              defaultValue={itemUpdatedImage || ""}
+                              placeholder={`https://... (saved as custom.updated_image_${idx})`}
                               style={input}
                               onChange={(e) =>
                                 setPreviews((p) => ({
@@ -1014,6 +1102,7 @@ export default function OrderReviewSinglePage() {
                               fetcher={fetcher}
                               inputId={`url-${idx}`}
                               shopifyOrderId={shopifyOrderId}
+                              lineItemIndex={idx} // ✅ Pass index for per-item metafield
                               onPreview={(url) =>
                                 setPreviews((p) => ({ ...p, [key]: url }))
                               }
@@ -1051,6 +1140,14 @@ export default function OrderReviewSinglePage() {
                       disabled={!canSend}
                     >
                       Send to Partner
+                    </button>
+                    <button
+                      type="submit"
+                      name="_intent"
+                      value="reject_order"
+                      style={rejectBtn}
+                    >
+                      Reject
                     </button>
                   </div>
                 </div>
@@ -1181,6 +1278,15 @@ const dangerBtn = {
   background: "#dc2626",
   color: "#fff",
   border: "1px solid #dc2626",
+  borderRadius: 10,
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+};
+const rejectBtn = {
+  background: "#fff",
+  color: "#dc2626",
+  border: "2px solid #dc2626",
   borderRadius: 10,
   padding: "10px 14px",
   fontWeight: 800,
