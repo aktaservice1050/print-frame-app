@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/label-has-associated-control */
 /* eslint-disable no-undef */
 /* eslint-disable react/prop-types */
 
@@ -973,17 +974,24 @@ export default function OrderReviewSinglePage() {
                   {selectedOrder.name}
                 </h2>
 
-                <span style={badge("editable")}>editable</span>
+                {/* <span style={badge("editable")}>editable</span> */}
 
-                <button type="button" onClick={clearSelection} style={tinyBtn}>
+                {/* <button type="button" onClick={clearSelection} style={tinyBtn}>
                   Clear
-                </button>
+                </button> */}
               </div>
 
               <div style={{ height: 10 }} />
 
               {/* ✅ Updated Image section now shows all per-item metafields */}
-              <div style={{ ...card, padding: 12, marginBottom: 12 }}>
+              <div
+                style={{
+                  ...card,
+                  padding: 12,
+                  marginBottom: 12,
+                  display: "none",
+                }}
+              >
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>
                   Updated Images (Per Item Metafields)
                 </div>
@@ -1072,9 +1080,7 @@ export default function OrderReviewSinglePage() {
                             <div style={previewPlaceholder}>No preview</div>
                           )}
 
-                          <label style={label}>
-                            Set updated image (custom.updated_image_{idx})
-                          </label>
+                          <label style={label}>Set updated image</label>
 
                           <div
                             style={{

@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/label-has-associated-control */
 /* eslint-disable no-undef */
 /* eslint-disable react/prop-types */
 
@@ -1079,9 +1080,7 @@ export default function Index() {
                             <div style={previewPlaceholder}>No preview</div>
                           )}
 
-                          <label style={label}>
-                            Set updated image (custom.updated_image_{idx})
-                          </label>
+                          <label style={label}>Set updated image</label>
 
                           <div
                             style={{
