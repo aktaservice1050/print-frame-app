@@ -973,17 +973,24 @@ export default function Index() {
                   {selectedOrder.name}
                 </h2>
 
-                <span style={badge("editable")}>editable</span>
+                {/* <span style={badge("editable")}>editable</span> */}
 
-                <button type="button" onClick={clearSelection} style={tinyBtn}>
+                {/* <button type="button" onClick={clearSelection} style={tinyBtn}>
                   Clear
-                </button>
+                </button> */}
               </div>
 
               <div style={{ height: 10 }} />
 
               {/* ✅ Updated Image section now shows all per-item metafields */}
-              <div style={{ ...card, padding: 12, marginBottom: 12 }}>
+              <div
+                style={{
+                  ...card,
+                  padding: 12,
+                  marginBottom: 12,
+                  display: "none",
+                }}
+              >
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>
                   Updated Images (Per Item Metafields)
                 </div>
