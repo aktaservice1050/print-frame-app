@@ -14,7 +14,7 @@ import {
 } from "react-router";
 import { authenticate } from "../shopify.server";
 
-/** ✅ Convert id into Shopify GID if needed */
+/** Convert id into Shopify GID if needed */
 const toOrderGid = (id) => {
   if (!id) return "";
   const str = String(id);
@@ -23,7 +23,7 @@ const toOrderGid = (id) => {
   return str;
 };
 
-/** helper */
+/** Helper: return a JSON Response */
 const jsonResponse = (data, init = {}) =>
   new Response(JSON.stringify(data), {
     ...init,
@@ -33,7 +33,7 @@ const jsonResponse = (data, init = {}) =>
     },
   });
 
-/** ✅ get customAttribute by key (label-based; matches your screenshot) */
+/** Get a customAttribute value by key (case-insensitive) */
 const getAttr = (customAttributes = [], key) => {
   const k = String(key || "")
     .trim()
@@ -47,21 +47,7 @@ const getAttr = (customAttributes = [], key) => {
   return found ? found.value : null;
 };
 
-/** ✅ "Image Editable" is the key in your customAttributes (screenshot) */
-const getImageEditableFromOrder = (order) => {
-  const edges = order?.lineItems?.edges || [];
-  for (const e of edges) {
-    const attrs = e?.node?.customAttributes || [];
-    const v =
-      getAttr(attrs, "Image Editable") ||
-      getAttr(attrs, "image_editable") ||
-      getAttr(attrs, "editable");
-    if (v) return String(v).trim().toLowerCase();
-  }
-  return null;
-};
-
-/** ✅ "File URL" is the key in your customAttributes (screenshot) */
+/** Get the first file URL from a line item's customAttributes */
 const getFirstFileUrlFromLineItem = (lineItemNode) => {
   const attrs = lineItemNode?.customAttributes || [];
   const v =
@@ -72,7 +58,7 @@ const getFirstFileUrlFromLineItem = (lineItemNode) => {
   return v ? String(v).trim() : null;
 };
 
-// ✅ Build updated images map from order metafields (per line item index)
+/** Build updated images map from order metafields (per line item index, up to 25) */
 const buildUpdatedImagesMap = (order) => {
   const map = {};
   for (let i = 0; i < 25; i++) {
@@ -107,7 +93,7 @@ const buildPartnerPayloadFromOrder = (order, updatedImagesMap) => {
       const item = edge?.node || {};
       const attrs = item.customAttributes || [];
 
-      // ✅ Per-item updated image URL
+      // Per-item updated image URL
       const updatedImageUrl = updatedImagesMap?.[idx] || null;
 
       let frameProperties = {
@@ -169,7 +155,7 @@ const buildPartnerPayloadFromOrder = (order, updatedImagesMap) => {
         uniqueFiles.push({ type: uniqueType, url: normalizedUrl });
       });
 
-      // ✅ override file url only for this specific item's updated image
+      // Override file URL only for this specific item's updated image
       if (updatedImageUrl) {
         uniqueFiles.forEach((f) => {
           const t = String(f.type || "").toLowerCase();
@@ -222,7 +208,7 @@ const buildPartnerPayloadFromOrder = (order, updatedImagesMap) => {
   };
 };
 
-// ✅ Build per-item metafield fragment (supports up to 25 line items)
+/** Build per-item metafield fragment (supports up to 25 line items) */
 const buildUpdatedImageMetafields = () => {
   return Array.from(
     { length: 25 },
@@ -279,7 +265,6 @@ export const loader = async ({ request }) => {
 
   const orders = edges.map((e) => {
     const o = e.node;
-    const imageEditable = getImageEditableFromOrder(o);
     return {
       id: o.id,
       name: o.name,
@@ -287,7 +272,6 @@ export const loader = async ({ request }) => {
       createdAt: o.createdAt,
       total: o.totalPriceSet?.shopMoney?.amount || null,
       currency: o.totalPriceSet?.shopMoney?.currencyCode || null,
-      imageEditable,
       partnerStatus: o?.partner_status?.value || null,
       partnerApiStatus: o?.partner_api_status?.value || null,
     };
@@ -338,24 +322,23 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   console.log("\n========== ACTION TRIGGERED ==========");
-  console.log("⏰ Time:", new Date().toISOString());
+  console.log("Time:", new Date().toISOString());
 
   try {
     const { admin } = await authenticate.admin(request);
     const form = await request.formData();
     const intent = String(form.get("_intent") || "");
 
-    console.log("📩 Intent received:", intent);
+    console.log("Intent received:", intent);
 
     if (intent === "update_image_metafield") {
       const shopifyOrderIdRaw = String(form.get("shopifyOrderId") || "");
       const shopifyOrderId = toOrderGid(shopifyOrderIdRaw);
       const imageUrl = String(form.get("imageUrl") || "");
-      // ✅ Per-item index
       const lineItemIndex = String(form.get("lineItemIndex") || "0");
       const metafieldKey = `updated_image_${lineItemIndex}`;
 
-      console.log("🧾 Update Image Metafield Request");
+      console.log("Update Image Metafield Request");
       console.log("Order Raw ID:", shopifyOrderIdRaw);
       console.log("Order GID:", shopifyOrderId);
       console.log("Image URL:", imageUrl);
@@ -363,14 +346,14 @@ export const action = async ({ request }) => {
       console.log("Metafield Key:", metafieldKey);
 
       if (!shopifyOrderId || !imageUrl) {
-        console.log("❌ Missing orderId or imageUrl");
+        console.log("Missing orderId or imageUrl");
         return jsonResponse(
           { ok: false, error: "Missing shopifyOrderId or imageUrl" },
           { status: 400 },
         );
       }
 
-      console.log("🚀 Updating Shopify metafield...");
+      console.log("Updating Shopify metafield...");
 
       const response = await admin.graphql(
         `#graphql
@@ -387,7 +370,6 @@ export const action = async ({ request }) => {
               metafields: [
                 {
                   namespace: "custom",
-                  // ✅ Save as updated_image_0, updated_image_1, etc.
                   key: metafieldKey,
                   value: imageUrl,
                   type: "url",
@@ -405,19 +387,18 @@ export const action = async ({ request }) => {
       );
 
       const result = await response.json();
-      console.log("📨 Shopify response:", JSON.stringify(result, null, 2));
+      console.log("Shopify response:", JSON.stringify(result, null, 2));
 
       const userErrors = result?.data?.orderUpdate?.userErrors || [];
       if (userErrors.length) {
-        console.log("❌ Shopify metafield error:", userErrors);
+        console.log("Shopify metafield error:", userErrors);
         return jsonResponse(
           { ok: false, error: userErrors[0].message },
           { status: 400 },
         );
       }
 
-      console.log("✅ Metafield updated successfully");
-
+      console.log("Metafield updated successfully");
       return jsonResponse({ ok: true, intent }, { status: 200 });
     }
 
@@ -425,19 +406,19 @@ export const action = async ({ request }) => {
       const orderIdRaw = String(form.get("orderId") || "");
       const orderId = toOrderGid(orderIdRaw);
 
-      console.log("\n🚀 Send Partner Request");
+      console.log("Send Partner Request");
       console.log("Order Raw ID:", orderIdRaw);
       console.log("Order GID:", orderId);
 
       if (!orderId) {
-        console.log("❌ Missing orderId");
+        console.log("Missing orderId");
         return jsonResponse(
           { ok: false, error: "Missing orderId" },
           { status: 400 },
         );
       }
 
-      console.log("🔎 Fetching order from Shopify...");
+      console.log("Fetching order from Shopify...");
 
       const r = await admin.graphql(
         `#graphql
@@ -470,46 +451,31 @@ export const action = async ({ request }) => {
       );
 
       const j = await r.json();
-      console.log("📦 Shopify Order Response:", JSON.stringify(j, null, 2));
+      console.log("Shopify Order Response:", JSON.stringify(j, null, 2));
 
       const order = j?.data?.order;
 
       if (!order) {
-        console.log("❌ Order not found");
+        console.log("Order not found");
         return jsonResponse(
           { ok: false, error: "Order not found" },
           { status: 404 },
         );
       }
 
-      console.log("🧾 Order Name:", order?.name);
-      console.log("📧 Customer Email:", order?.email);
+      console.log("Order Name:", order?.name);
+      console.log("Customer Email:", order?.email);
 
-      const imageEditable = getImageEditableFromOrder(order);
-      console.log("🖼 Image Editable:", imageEditable);
-
-      if (imageEditable !== "editable") {
-        console.log("❌ Order not editable");
-        return jsonResponse(
-          {
-            ok: false,
-            error:
-              'This order is not editable (or missing "Image Editable"). It should be auto-sent by webhook.',
-          },
-          { status: 400 },
-        );
-      }
-
-      // ✅ Build per-item updated images map
+      // Build per-item updated images map
       const updatedImagesMap = buildUpdatedImagesMap(order);
-      console.log("🖼 Updated Images Map:", updatedImagesMap);
+      console.log("Updated Images Map:", updatedImagesMap);
 
       const partnerPayload = buildPartnerPayloadFromOrder(
         order,
         updatedImagesMap,
       );
 
-      console.log("\n📤 Partner Payload:");
+      console.log("Partner Payload:");
       console.log(JSON.stringify(partnerPayload, null, 2));
 
       const partnerApiUrl =
@@ -518,7 +484,7 @@ export const action = async ({ request }) => {
       const PARTNER_API_KEY =
         "ygMsrjnwsQZBMUlK:cTRqd1RyV0izCaBr9t8qBUXp3R5hjHT6";
 
-      console.log("🌐 Partner API URL:", partnerApiUrl);
+      console.log("Partner API URL:", partnerApiUrl);
 
       const controller = new AbortController();
       const t = setTimeout(() => controller.abort(), 10000);
@@ -528,7 +494,7 @@ export const action = async ({ request }) => {
       let parsed = null;
 
       try {
-        console.log("🚀 Sending request to Partner API...");
+        console.log("Sending request to Partner API...");
 
         res = await fetch(partnerApiUrl, {
           method: "POST",
@@ -540,11 +506,11 @@ export const action = async ({ request }) => {
           signal: controller.signal,
         });
 
-        console.log("📡 Partner API Status:", res.status);
+        console.log("Partner API Status:", res.status);
 
         text = await res.text().catch(() => "");
 
-        console.log("📨 Partner API Raw Response:", text);
+        console.log("Partner API Raw Response:", text);
 
         try {
           parsed = text ? JSON.parse(text) : null;
@@ -557,22 +523,16 @@ export const action = async ({ request }) => {
             ? "Partner request timeout"
             : String(err?.message || err);
 
-        console.log("❌ Partner API Error:", msg);
+        console.log("Partner API Error:", msg);
 
-        return jsonResponse(
-          {
-            ok: false,
-            error: msg,
-          },
-          { status: 400 },
-        );
+        return jsonResponse({ ok: false, error: msg }, { status: 400 });
       } finally {
         clearTimeout(t);
       }
 
       const statusValue = res.ok ? "sent" : "failed";
 
-      console.log("💾 Saving Partner Metafields...");
+      console.log("Saving Partner Metafields...");
       console.log("Partner Status:", statusValue);
 
       await admin.graphql(
@@ -612,21 +572,17 @@ export const action = async ({ request }) => {
         },
       );
 
-      console.log("✅ Partner metafields saved");
+      console.log("Partner metafields saved");
 
       if (!res.ok) {
-        console.log("❌ Partner API failed");
-
+        console.log("Partner API failed");
         return jsonResponse(
-          {
-            ok: false,
-            error: `Partner API failed (${res.status})`,
-          },
+          { ok: false, error: `Partner API failed (${res.status})` },
           { status: 400 },
         );
       }
 
-      console.log("🎉 Order successfully sent to Partner");
+      console.log("Order successfully sent to Partner");
 
       return jsonResponse(
         {
@@ -642,7 +598,7 @@ export const action = async ({ request }) => {
       const orderIdRaw = String(form.get("orderId") || "");
       const orderId = toOrderGid(orderIdRaw);
 
-      console.log("\n🚫 Reject Order Request");
+      console.log("Reject Order Request");
       console.log("Order GID:", orderId);
 
       if (!orderId) {
@@ -677,21 +633,18 @@ export const action = async ({ request }) => {
         },
       );
 
-      console.log("✅ Order rejected");
+      console.log("Order rejected");
       return jsonResponse({ ok: true, intent }, { status: 200 });
     }
 
-    console.log("❌ Unknown intent:", intent);
-
+    console.log("Unknown intent:", intent);
     return jsonResponse(
       { ok: false, error: "Unknown intent" },
       { status: 400 },
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-
-    console.log("🔥 ACTION ERROR:", msg);
-
+    console.log("ACTION ERROR:", msg);
     return jsonResponse({ ok: false, error: msg }, { status: 500 });
   }
 };
@@ -702,7 +655,7 @@ function UploadAndSaveImage({
   fetcher,
   inputId,
   shopifyOrderId,
-  lineItemIndex, // ✅ NEW prop
+  lineItemIndex,
   onPreview,
   onSuccessMsg,
   onErrorMsg,
@@ -750,16 +703,16 @@ function UploadAndSaveImage({
         const el = document.getElementById(inputId);
         if (el) el.value = result.fileUrl;
 
+        // Save updated image URL to Shopify metafield immediately after upload
         const mf = new FormData();
         mf.append("_intent", "update_image_metafield");
         mf.append("shopifyOrderId", shopifyOrderId);
         mf.append("imageUrl", result.fileUrl);
-        // ✅ Send line item index so each item gets its own metafield
         mf.append("lineItemIndex", String(lineItemIndex ?? 0));
         fetcher.submit(mf, { method: "POST" });
 
-        shopify.toast.show("✅ Image uploaded & saved!");
-        onSuccessMsg?.("✅ Image uploaded & saved!");
+        shopify.toast.show("Image uploaded & saved!");
+        onSuccessMsg?.("Image uploaded & saved!");
       } else {
         const msg = `Upload failed: ${result.error || "Unknown error"}`;
         shopify.toast.show(msg);
@@ -806,6 +759,9 @@ function UploadAndSaveImage({
   );
 }
 
+/** Status values that are hidden from the pending orders table */
+const HIDDEN_STATUSES = new Set(["sent", "rejected"]);
+
 export default function Index() {
   const { orders, selectedOrder, orderId, shop } = useLoaderData();
   const actionData = useActionData();
@@ -840,41 +796,54 @@ export default function Index() {
     setPreviews({});
   };
 
-  const clearSelection = () => {
-    const next = new URLSearchParams(sp);
-    next.delete("orderId");
-    setSp(next);
-    setUploadMsg("");
-    setUploadErr("");
-    setPreviews({});
-  };
-
-  const imageEditable = selectedOrder
-    ? getImageEditableFromOrder(selectedOrder)
-    : null;
-
   const shopifyOrderId = toOrderGid(selectedOrder?.id);
   const lineEdges = selectedOrder?.lineItems?.edges || [];
   const canSend = !!selectedOrder;
 
-  // ✅ Get updated image URL for a specific line item index
+  // Filter out sent and rejected orders from the table
+  const pendingOrders = (orders || []).filter(
+    (o) => !HIDDEN_STATUSES.has(o.partnerStatus),
+  );
+
+  // Get updated image URL for a specific line item index
   const getUpdatedImageForIndex = (idx) => {
     return selectedOrder?.[`updated_image_${idx}`]?.value || null;
   };
 
-  console.log("first", orders);
+  // Badge color based on partner status
+  const statusBadge = (status) => {
+    const base = {
+      display: "inline-block",
+      padding: "3px 9px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 700,
+      textTransform: "capitalize",
+    };
+    if (status === "sent")
+      return { ...base, background: "#dcfce7", color: "#166534" };
+    if (status === "edited")
+      return { ...base, background: "#fef9c3", color: "#854d0e" };
+    if (status === "rejected")
+      return { ...base, background: "#fee2e2", color: "#991b1b" };
+    if (status === "failed")
+      return { ...base, background: "#fee2e2", color: "#991b1b" };
+    return { ...base, background: "#e5e7eb", color: "#374151" };
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Order Review</h1>
           <p style={styles.subtitle}>
-            Editable → upload/edit → Send to Partner | Not editable → webhook
-            auto send
+            Pending orders — upload an image or send directly to partner
           </p>
         </div>
         <div style={styles.metaRight}>
-          <span style={styles.countPill}>Total: {orders?.length ?? 0}</span>
+          <span style={styles.countPill}>
+            Pending: {pendingOrders.length} / Total: {orders?.length ?? 0}
+          </span>
         </div>
       </div>
 
@@ -887,6 +856,7 @@ export default function Index() {
       {uploadMsg && <div style={styles.alertOk}>{uploadMsg}</div>}
 
       <div style={styles.grid}>
+        {/* Orders table — only shows orders that are NOT sent or rejected */}
         <div style={styles.card}>
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
@@ -894,10 +864,9 @@ export default function Index() {
                 <tr style={styles.theadRow}>
                   {[
                     "Pick",
-                    "Type",
                     "Order #",
                     "Email",
-                    "Partner",
+                    "Partner Status",
                     "Created",
                   ].map((h) => (
                     <th key={h} style={styles.th}>
@@ -907,53 +876,42 @@ export default function Index() {
                 </tr>
               </thead>
               <tbody>
-                {(orders || [])
-                  .filter((o) => o.partnerStatus !== "sent")
-                  .filter((o) => o.partnerStatus !== "rejected")
-                  .map((o, idx) => {
-                    const type = "editable";
-                    const p = o.partnerStatus || "-";
-                    return (
-                      <tr
-                        key={o.id}
-                        style={{
-                          backgroundColor: idx % 2 === 0 ? "#fff" : "#f9fafb",
-                          cursor: "pointer",
-                        }}
-                        onClick={() => selectOrder(o.id)}
-                      >
-                        <td style={styles.td}>
-                          <input
-                            type="radio"
-                            checked={orderId === o.id}
-                            onChange={() => selectOrder(o.id)}
-                          />
-                        </td>
-                        <td style={styles.td}>
-                          <span
-                            style={badge(
-                              type === "editable" ? "editable" : "auto",
-                            )}
-                          >
-                            {type}
-                          </span>
-                        </td>
-                        <td style={styles.tdStrong}>{o.name || "-"}</td>
-                        <td style={styles.tdMuted}>{o.email || "-"}</td>
-                        <td style={styles.tdMuted}>{p}</td>
-                        <td style={styles.tdMuted}>
-                          {o.createdAt
-                            ? new Date(o.createdAt).toLocaleString()
-                            : "-"}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                {pendingOrders.map((o, idx) => {
+                  const p = o.partnerStatus || "-";
+                  return (
+                    <tr
+                      key={o.id}
+                      style={{
+                        backgroundColor: idx % 2 === 0 ? "#fff" : "#f9fafb",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => selectOrder(o.id)}
+                    >
+                      <td style={styles.td}>
+                        <input
+                          type="radio"
+                          checked={orderId === o.id}
+                          onChange={() => selectOrder(o.id)}
+                        />
+                      </td>
+                      <td style={styles.tdStrong}>{o.name || "-"}</td>
+                      <td style={styles.tdMuted}>{o.email || "-"}</td>
+                      <td style={styles.td}>
+                        <span style={statusBadge(o.partnerStatus)}>{p}</span>
+                      </td>
+                      <td style={styles.tdMuted}>
+                        {o.createdAt
+                          ? new Date(o.createdAt).toLocaleString()
+                          : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
 
-                {(orders?.length ?? 0) === 0 && (
+                {pendingOrders.length === 0 && (
                   <tr>
-                    <td style={{ padding: 18 }} colSpan={6}>
-                      No orders.
+                    <td style={{ padding: 18 }} colSpan={5}>
+                      No pending orders.
                     </td>
                   </tr>
                 )}
@@ -962,6 +920,7 @@ export default function Index() {
           </div>
         </div>
 
+        {/* Order detail panel */}
         <div style={styles.detailCard}>
           {!selectedOrder ? (
             <div style={{ padding: 16, opacity: 0.8 }}>
@@ -973,69 +932,14 @@ export default function Index() {
                 <h2 style={{ margin: 0, fontSize: 18 }}>
                   {selectedOrder.name}
                 </h2>
-
-                {/* <span style={badge("editable")}>editable</span> */}
-
-                {/* <button type="button" onClick={clearSelection} style={tinyBtn}>
-                  Clear
-                </button> */}
+                {selectedOrder?.partner_status?.value && (
+                  <span style={statusBadge(selectedOrder.partner_status.value)}>
+                    {selectedOrder.partner_status.value}
+                  </span>
+                )}
               </div>
 
               <div style={{ height: 10 }} />
-
-              {/* ✅ Updated Image section now shows all per-item metafields */}
-              <div
-                style={{
-                  ...card,
-                  padding: 12,
-                  marginBottom: 12,
-                  display: "none",
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                  Updated Images (Per Item Metafields)
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.8 }}>
-                  Metafields: <b>custom.updated_image_0</b>,{" "}
-                  <b>custom.updated_image_1</b>, ...
-                </div>
-                <div style={{ height: 10 }} />
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {lineEdges.map((edge, idx) => {
-                    const itemUpdatedImage = getUpdatedImageForIndex(idx);
-                    return (
-                      <div key={idx} style={{ textAlign: "center" }}>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            opacity: 0.7,
-                            marginBottom: 4,
-                          }}
-                        >
-                          Item {idx + 1}
-                        </div>
-                        {itemUpdatedImage ? (
-                          <div style={previewWrap}>
-                            <img
-                              src={itemUpdatedImage}
-                              alt={`updated preview item ${idx + 1}`}
-                              style={previewImg}
-                              onClick={() =>
-                                window.open(itemUpdatedImage, "_blank")
-                              }
-                            />
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                              Click preview
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={previewPlaceholder}>No image</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               <Form method="post">
                 <input type="hidden" name="orderId" value={selectedOrder.id} />
@@ -1045,7 +949,6 @@ export default function Index() {
                     const it = edge.node;
                     const key = `${idx}`;
                     const original = getFirstFileUrlFromLineItem(it);
-                    // ✅ Each item uses its own metafield for preview
                     const itemUpdatedImage = getUpdatedImageForIndex(idx);
                     const previewUrl =
                       previews[key] || itemUpdatedImage || original || "";
@@ -1108,7 +1011,7 @@ export default function Index() {
                               fetcher={fetcher}
                               inputId={`url-${idx}`}
                               shopifyOrderId={shopifyOrderId}
-                              lineItemIndex={idx} // ✅ Pass index for per-item metafield
+                              lineItemIndex={idx}
                               onPreview={(url) =>
                                 setPreviews((p) => ({ ...p, [key]: url }))
                               }
@@ -1166,7 +1069,7 @@ export default function Index() {
   );
 }
 
-/** styles */
+/** Styles */
 const styles = {
   container: { padding: 20, fontFamily: "system-ui", color: "#111827" },
   alertError: {
@@ -1298,15 +1201,6 @@ const rejectBtn = {
   fontWeight: 800,
   cursor: "pointer",
 };
-const tinyBtn = {
-  marginLeft: "auto",
-  border: "1px solid #e5e7eb",
-  background: "#fff",
-  borderRadius: 10,
-  padding: "6px 10px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
 
 const fileBlock = {
   border: "1px solid #e5e7eb",
@@ -1341,20 +1235,4 @@ const previewPlaceholder = {
   color: "#64748b",
   background: "#fff",
   fontSize: 12,
-};
-
-const badge = (status) => {
-  const base = {
-    display: "inline-block",
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 800,
-    textTransform: "capitalize",
-  };
-  if (status === "editable")
-    return { ...base, background: "#dbeafe", color: "#1e40af" };
-  if (status === "auto")
-    return { ...base, background: "#dcfce7", color: "#166534" };
-  return { ...base, background: "#e5e7eb", color: "#111827" };
 };
